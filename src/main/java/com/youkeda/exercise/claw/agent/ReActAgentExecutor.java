@@ -161,7 +161,8 @@ public class ReActAgentExecutor implements AgentExecutor {
         if (context == null || context.getUserId() == null || context.getUserId().isBlank()) {
             throw new IllegalArgumentException("AgentContext.userId 不能为空");
         }
-        try (UserExecutionContext.Scope ignored = userExecutionContext.open(context.getUserId())) {
+        try (UserExecutionContext.Scope ignored = userExecutionContext.open(
+                context.getUserId(), context.getConversationId())) {
             return executeBound(context);
         }
     }

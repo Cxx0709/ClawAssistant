@@ -5,6 +5,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.youkeda.exercise.claw.identity.UserExecutionContext;
 
 /**
  * SQLite 版对话摘要存储（ADR §9/Phase 3）。
@@ -19,18 +21,32 @@ public class SqliteConversationSummaryStore implements ConversationSummaryStore 
     private static final Logger log = LoggerFactory.getLogger(SqliteConversationSummaryStore.class);
 
     private final JdbcTemplate jdbc;
+    private final UserExecutionContext executionContext;
 
     public SqliteConversationSummaryStore(JdbcTemplate jdbc) {
+        this(jdbc, null);
+    }
+
+    @Autowired
+    public SqliteConversationSummaryStore(JdbcTemplate jdbc, UserExecutionContext executionContext) {
         this.jdbc = jdbc;
+        this.executionContext = executionContext;
     }
 
     @Override
     public ConversationSummary get() {
         try {
-            return jdbc.queryForObject("""
+            String conversationId = conversationId();
+            String sql = conversationId == null ? """
                 SELECT summary_text, covered_until_seq FROM conversation_summary WHERE id = 1
-            """, (rs, rowNum) -> new ConversationSummary(
-                    rs.getString("summary_text"), rs.getLong("covered_until_seq")));
+            """ : """
+                SELECT summary_text, covered_until_seq FROM conversation_summaries
+                WHERE user_id = ? AND conversation_id = ?
+            """;
+            Object[] args = conversationId == null ? new Object[0]
+                    : new Object[]{executionContext.requireUserId(), conversationId};
+            return jdbc.queryForObject(sql, (rs, rowNum) -> new ConversationSummary(
+                    rs.getString("summary_text"), rs.getLong("covered_until_seq")), args);
         } catch (org.springframework.dao.EmptyResultDataAccessException e) {
             return null;
         } catch (Exception e) {
@@ -43,10 +59,20 @@ public class SqliteConversationSummaryStore implements ConversationSummaryStore 
     public void save(ConversationSummary summary) {
         try {
             long now = System.currentTimeMillis() / 1000;
-            jdbc.update("""
-                INSERT OR REPLACE INTO conversation_summary (id, summary_text, covered_until_seq, updated_at)
-                VALUES (1, ?, ?, ?)
-            """, summary.text(), summary.coveredUntilSeq(), now);
+            String conversationId = conversationId();
+            if (conversationId == null) {
+                jdbc.update("""
+                    INSERT OR REPLACE INTO conversation_summary
+                    (id, summary_text, covered_until_seq, updated_at) VALUES (1, ?, ?, ?)
+                """, summary.text(), summary.coveredUntilSeq(), now);
+            } else {
+                jdbc.update("""
+                    INSERT OR REPLACE INTO conversation_summaries
+                    (user_id, conversation_id, summary_text, covered_until_seq, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                """, executionContext.requireUserId(), conversationId,
+                        summary.text(), summary.coveredUntilSeq(), now);
+            }
             log.debug("对话摘要已落库 | coveredUntilSeq={}", summary.coveredUntilSeq());
         } catch (Exception e) {
             log.error("保存对话摘要失败 | error={}", e.getMessage());
@@ -55,6 +81,14 @@ public class SqliteConversationSummaryStore implements ConversationSummaryStore 
 
     @Override
     public void clear() {
-        jdbc.update("DELETE FROM conversation_summary WHERE id = 1");
+        String conversationId = conversationId();
+        if (conversationId == null) jdbc.update("DELETE FROM conversation_summary WHERE id = 1");
+        else jdbc.update("""
+            DELETE FROM conversation_summaries WHERE user_id = ? AND conversation_id = ?
+        """, executionContext.requireUserId(), conversationId);
+    }
+
+    private String conversationId() {
+        return executionContext == null ? null : executionContext.currentConversationIdOrNull();
     }
 }

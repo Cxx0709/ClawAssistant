@@ -9,19 +9,23 @@ import org.springframework.stereotype.Component;
 @Component
 public class UserExecutionContext {
 
-    private final ThreadLocal<String> current = new ThreadLocal<>();
+    private final ThreadLocal<ExecutionIdentity> current = new ThreadLocal<>();
 
     public Scope open(String userId) {
+        return open(userId, null);
+    }
+
+    public Scope open(String userId, String conversationId) {
         if (userId == null || userId.isBlank()) {
             throw new IllegalArgumentException("userId 不能为空");
         }
-        String previous = current.get();
-        current.set(userId);
+        ExecutionIdentity previous = current.get();
+        current.set(new ExecutionIdentity(userId, normalize(conversationId)));
         return new Scope(previous);
     }
 
     public String requireUserId() {
-        String userId = current.get();
+        String userId = currentUserIdOrNull();
         if (userId == null || userId.isBlank()) {
             throw new IllegalStateException("当前执行未绑定用户身份");
         }
@@ -29,14 +33,28 @@ public class UserExecutionContext {
     }
 
     public String currentUserIdOrNull() {
-        return current.get();
+        ExecutionIdentity identity = current.get();
+        return identity == null ? null : identity.userId();
+    }
+
+    public String currentConversationIdOrNull() {
+        ExecutionIdentity identity = current.get();
+        return identity == null ? null : identity.conversationId();
+    }
+
+    public String requireConversationId() {
+        String conversationId = currentConversationIdOrNull();
+        if (conversationId == null) {
+            throw new IllegalStateException("当前执行未绑定对话");
+        }
+        return conversationId;
     }
 
     public final class Scope implements AutoCloseable {
-        private final String previous;
+        private final ExecutionIdentity previous;
         private boolean closed;
 
-        private Scope(String previous) {
+        private Scope(ExecutionIdentity previous) {
             this.previous = previous;
         }
 
@@ -48,4 +66,10 @@ public class UserExecutionContext {
             else current.set(previous);
         }
     }
+
+    private static String normalize(String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    private record ExecutionIdentity(String userId, String conversationId) {}
 }

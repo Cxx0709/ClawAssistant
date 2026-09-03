@@ -30,6 +30,14 @@ public class LLMProperties {
      */
     private String model = "qwen3.6-plus";
 
+    /**
+     * 流式响应连续多久没有收到任何一行数据后主动断开。
+     *
+     * <p>{@link java.net.http.HttpRequest.Builder#timeout(java.time.Duration)} 在使用
+     * {@code BodyHandlers.ofInputStream()} 时只覆盖响应头阶段，因此响应体断流需要单独的空闲超时。
+     */
+    private int streamIdleTimeoutSeconds = 30;
+
     public String getApiKey() {
         return apiKey;
     }
@@ -52,5 +60,13 @@ public class LLMProperties {
 
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public int getStreamIdleTimeoutSeconds() {
+        return streamIdleTimeoutSeconds;
+    }
+
+    public void setStreamIdleTimeoutSeconds(int streamIdleTimeoutSeconds) {
+        this.streamIdleTimeoutSeconds = streamIdleTimeoutSeconds;
     }
 }

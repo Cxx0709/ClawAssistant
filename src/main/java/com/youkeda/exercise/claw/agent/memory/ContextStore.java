@@ -19,6 +19,10 @@ public interface ContextStore {
 
     List<Message> getHistory(String userId, int maxMessages);
 
+    default List<Message> getHistory(String userId, String conversationId, int maxMessages) {
+        return getHistory(userId, maxMessages);
+    }
+
     /**
      * 追加一条纯文本消息
      */
@@ -110,4 +114,8 @@ public interface ContextStore {
     void clear();
 
     void clear(String userId);
+
+    default void clear(String userId, String conversationId) {
+        clear(userId);
+    }
 }

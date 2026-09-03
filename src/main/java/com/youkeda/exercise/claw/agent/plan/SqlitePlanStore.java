@@ -7,6 +7,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.youkeda.exercise.claw.identity.UserExecutionContext;
 
 /**
  * SQLite 版 PlanState 存储（ADR §8/Phase 2）。
@@ -25,17 +27,30 @@ public class SqlitePlanStore implements PlanStore {
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final UserExecutionContext executionContext;
 
     public SqlitePlanStore(JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        this(jdbc, objectMapper, null);
+    }
+
+    @Autowired
+    public SqlitePlanStore(JdbcTemplate jdbc, ObjectMapper objectMapper,
+                           UserExecutionContext executionContext) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.executionContext = executionContext;
     }
 
     @Override
     public PlanState get() {
         try {
-            String json = jdbc.queryForObject(
-                    "SELECT plan_json FROM agent_plans WHERE id = 1", String.class);
+            String conversationId = conversationId();
+            String json = conversationId == null
+                    ? jdbc.queryForObject("SELECT plan_json FROM agent_plans WHERE id = 1", String.class)
+                    : jdbc.queryForObject("""
+                        SELECT plan_json FROM conversation_agent_plans
+                        WHERE user_id = ? AND conversation_id = ?
+                    """, String.class, executionContext.requireUserId(), conversationId);
             if (json == null || json.isBlank()) return null;
             return objectMapper.readValue(json, PlanState.class);
         } catch (org.springframework.dao.EmptyResultDataAccessException e) {
@@ -51,10 +66,18 @@ public class SqlitePlanStore implements PlanStore {
         try {
             String json = objectMapper.writeValueAsString(state);
             long now = System.currentTimeMillis() / 1000;
-            jdbc.update("""
-                INSERT OR REPLACE INTO agent_plans (id, plan_json, updated_at)
-                VALUES (1, ?, ?)
-            """, json, now);
+            String conversationId = conversationId();
+            if (conversationId == null) {
+                jdbc.update("""
+                    INSERT OR REPLACE INTO agent_plans (id, plan_json, updated_at)
+                    VALUES (1, ?, ?)
+                """, json, now);
+            } else {
+                jdbc.update("""
+                    INSERT OR REPLACE INTO conversation_agent_plans
+                    (user_id, conversation_id, plan_json, updated_at) VALUES (?, ?, ?, ?)
+                """, executionContext.requireUserId(), conversationId, json, now);
+            }
             log.debug("PlanState 已落库 | version={}", state != null ? state.getVersion() : "null");
         } catch (Exception e) {
             log.error("保存 PlanState 失败 | error={}", e.getMessage());
@@ -63,7 +86,15 @@ public class SqlitePlanStore implements PlanStore {
 
     @Override
     public void clear() {
-        jdbc.update("DELETE FROM agent_plans WHERE id = 1");
+        String conversationId = conversationId();
+        if (conversationId == null) jdbc.update("DELETE FROM agent_plans WHERE id = 1");
+        else jdbc.update("""
+            DELETE FROM conversation_agent_plans WHERE user_id = ? AND conversation_id = ?
+        """, executionContext.requireUserId(), conversationId);
         log.debug("PlanState 已清除");
+    }
+
+    private String conversationId() {
+        return executionContext == null ? null : executionContext.currentConversationIdOrNull();
     }
 }

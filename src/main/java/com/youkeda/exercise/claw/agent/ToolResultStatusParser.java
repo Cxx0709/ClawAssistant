@@ -21,7 +21,7 @@ public class ToolResultStatusParser {
             if (node.has("error")) return ResultStatus.FAILED;
             String status = node.path("status").asText("SUCCESS").toUpperCase();
             return switch (status) {
-                case "SUCCESS", "STARTED" -> ResultStatus.SUCCESS;
+                case "SUCCESS", "STARTED", "ALL_COLLECTED" -> ResultStatus.SUCCESS;
                 case "PARTIAL" -> ResultStatus.PARTIAL;
                 case "BLOCKED" -> ResultStatus.BLOCKED;
                 default -> ResultStatus.FAILED;

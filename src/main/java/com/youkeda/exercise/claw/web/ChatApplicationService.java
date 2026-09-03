@@ -11,6 +11,8 @@ import com.youkeda.exercise.claw.artifact.ArtifactService;
 import com.youkeda.exercise.claw.artifact.RequestArtifactCollector;
 import com.youkeda.exercise.claw.infrastructure.document.FileParseService;
 import org.springframework.stereotype.Service;
+import com.youkeda.exercise.claw.web.conversation.ConversationService;
+import com.youkeda.exercise.claw.web.conversation.ConversationTitleGenerator;
 
 import java.nio.file.Files;
 import java.util.Base64;
@@ -26,25 +28,40 @@ public class ChatApplicationService {
     private final VisionService visionService;
     private final VoiceService voiceService;
     private final FileParseService fileParseService;
+    private final ConversationService conversationService;
 
     public ChatApplicationService(ReActAgentExecutor agentExecutor,
                                   ArtifactService artifactService,
                                   VisionService visionService,
                                   VoiceService voiceService,
-                                  FileParseService fileParseService) {
+                                  FileParseService fileParseService,
+                                  ConversationService conversationService) {
         this.agentExecutor = agentExecutor;
         this.artifactService = artifactService;
         this.visionService = visionService;
         this.voiceService = voiceService;
         this.fileParseService = fileParseService;
+        this.conversationService = conversationService;
     }
 
     public ChatResponse execute(String userId, String message, List<String> attachmentIds,
                                 String requestId, AgentStreamObserver observer) {
+        return execute(userId, null, message, attachmentIds, requestId, observer);
+    }
+
+    public ChatResponse execute(String userId, String conversationId, String message,
+                                List<String> attachmentIds, String requestId,
+                                AgentStreamObserver observer) {
         String enrichedMessage = enrichWithAttachments(userId, message, attachmentIds);
+        if (conversationId != null) {
+            conversationService.requireOwned(userId, conversationId);
+            conversationService.touchAfterMessage(userId, conversationId,
+                    titleSource(userId, message, attachmentIds));
+        }
         RequestArtifactCollector artifacts = new RequestArtifactCollector(artifactService, userId);
         AgentContext context = new AgentContext()
                 .setUserId(userId)
+                .setConversationId(conversationId)
                 .setMessage(enrichedMessage)
                 .setMessageType(MessageKind.TEXT)
                 .setActivityRequestId(requestId)
@@ -86,5 +103,14 @@ public class ChatApplicationService {
     private String analyzeImage(byte[] bytes, String mimeType, String question) {
         String dataUrl = "data:" + mimeType + ";base64," + Base64.getEncoder().encodeToString(bytes);
         return visionService.analyze(dataUrl, question.isBlank() ? "请描述图片内容" : question);
+    }
+
+    private String titleSource(String userId, String message, List<String> attachmentIds) {
+        if (message != null && !message.isBlank()) return message;
+        if (attachmentIds == null || attachmentIds.isEmpty()) return "附件对话";
+        return artifactService.load(userId, attachmentIds.get(0))
+                .map(stored -> ConversationTitleGenerator.fromAttachmentFileName(
+                        stored.metadata().fileName()))
+                .orElse("附件对话");
     }
 }

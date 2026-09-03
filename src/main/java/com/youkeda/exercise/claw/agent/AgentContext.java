@@ -18,6 +18,9 @@ public class AgentContext {
      */
     private String userId;
 
+    /** Web 对话 ID；系统定时任务可为 null。 */
+    private String conversationId;
+
     /**
      * 上下文 Token
      */
@@ -102,6 +105,15 @@ public class AgentContext {
 
     public MessageKind getMessageType() {
         return messageType;
+    }
+
+    public String getConversationId() {
+        return conversationId;
+    }
+
+    public AgentContext setConversationId(String conversationId) {
+        this.conversationId = conversationId;
+        return this;
     }
 
     public AgentContext setMessageType(MessageKind messageType) {

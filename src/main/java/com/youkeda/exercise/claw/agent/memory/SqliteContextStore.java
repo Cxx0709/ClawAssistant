@@ -10,6 +10,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -61,39 +63,48 @@ public class SqliteContextStore implements ContextStore {
 
     @Override
     public List<Message> getHistory(int maxMessages) {
-        return getHistory(resolveUserId(), maxMessages);
+        String conversationId = resolveConversationId();
+        return conversationId == null
+                ? getHistory(resolveUserId(), maxMessages)
+                : getHistory(resolveUserId(), conversationId, maxMessages);
     }
 
     @Override
     public void append(String role, String content) {
-        append(resolveUserId(), role, content, null, null, null);
+        appendCurrent(new Message(role, content));
     }
 
     @Override
     public void append(String role, String content,
                         String mediaEncryptParam, String mediaAesKey,
                         String mediaUrl) {
-        append(resolveUserId(), role, content, mediaEncryptParam, mediaAesKey, mediaUrl);
+        appendCurrent(new Message(role, content, mediaEncryptParam, mediaAesKey, mediaUrl));
     }
 
     @Override
     public void append(Message message) {
-        append(resolveUserId(), message);
+        appendCurrent(message);
     }
 
     @Override
     public Message findLastByPrefix(String contentPrefix) {
-        return findLastByPrefix(resolveUserId(), contentPrefix);
+        String conversationId = resolveConversationId();
+        if (conversationId == null) return findLastByPrefix(resolveUserId(), contentPrefix);
+        return findLastByPrefix(resolveUserId(), conversationId, contentPrefix);
     }
 
     @Override
     public List<Message> findAllByPrefix(String contentPrefix) {
-        return findAllByPrefix(resolveUserId(), contentPrefix);
+        String conversationId = resolveConversationId();
+        if (conversationId == null) return findAllByPrefix(resolveUserId(), contentPrefix);
+        return findAllByPrefix(resolveUserId(), conversationId, contentPrefix);
     }
 
     @Override
     public void clear() {
-        clear(resolveUserId());
+        String conversationId = resolveConversationId();
+        if (conversationId == null) clear(resolveUserId());
+        else clear(resolveUserId(), conversationId);
     }
 
     // ==================== 指定 userId 的查询（供 UserBehaviorAnalyzer 等组件直接调用） ====================
@@ -122,6 +133,17 @@ public class SqliteContextStore implements ContextStore {
             }
         }
         return result;
+    }
+
+    @Override
+    public List<Message> getHistory(String userId, String conversationId, int maxMessages) {
+        List<String> jsons = jdbc.queryForList("""
+            SELECT message_json FROM context_messages
+            WHERE user_id = ? AND conversation_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+        """, String.class, userId, conversationId, maxMessages);
+        return deserializeChronologically(jsons);
     }
 
     public Message findLastByPrefix(String userId, String contentPrefix) {
@@ -159,6 +181,35 @@ public class SqliteContextStore implements ContextStore {
                     result.add(msg);
                 }
             } catch (JsonProcessingException ignored) {}
+        }
+        return result;
+    }
+
+    private Message findLastByPrefix(String userId, String conversationId, String contentPrefix) {
+        List<String> jsons = jdbc.queryForList("""
+            SELECT message_json FROM context_messages
+            WHERE user_id = ? AND conversation_id = ?
+            ORDER BY created_at DESC, id DESC
+        """, String.class, userId, conversationId);
+        for (String json : jsons) {
+            Message message = deserialize(json);
+            if (message != null && message.content() != null
+                    && message.content().startsWith(contentPrefix)) return message;
+        }
+        return null;
+    }
+
+    private List<Message> findAllByPrefix(String userId, String conversationId, String contentPrefix) {
+        List<String> jsons = jdbc.queryForList("""
+            SELECT message_json FROM context_messages
+            WHERE user_id = ? AND conversation_id = ?
+            ORDER BY created_at ASC, id ASC
+        """, String.class, userId, conversationId);
+        List<Message> result = new ArrayList<>();
+        for (String json : jsons) {
+            Message message = deserialize(json);
+            if (message != null && message.content() != null
+                    && message.content().startsWith(contentPrefix)) result.add(message);
         }
         return result;
     }
@@ -256,27 +307,105 @@ public class SqliteContextStore implements ContextStore {
 
     @Override
     public List<ConversationTurn> getTurns(int maxTurns) {
-        return getTurns(resolveUserId(), maxTurns);
+        String conversationId = resolveConversationId();
+        return conversationId == null
+                ? getTurns(resolveUserId(), maxTurns)
+                : getTurnsForConversation(resolveUserId(), conversationId, maxTurns);
     }
 
     @Override
     public long beginTurn(String roundId, TurnInitiator initiator, Message firstMessage) {
-        return beginTurn(resolveUserId(), roundId, initiator, firstMessage);
+        String conversationId = resolveConversationId();
+        if (conversationId == null) {
+            return beginTurn(resolveUserId(), roundId, initiator, firstMessage);
+        }
+        long seq = nextSeq(resolveUserId(), conversationId);
+        jdbc.update("""
+            INSERT INTO context_messages
+            (user_id, conversation_id, message_json, round_id, seq, turn_status, turn_initiator)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, resolveUserId(), conversationId, serialize(firstMessage), roundId, seq,
+                TurnStatus.RUNNING.name(), initiator.name());
+        return seq;
     }
 
     @Override
     public void appendToTurn(String roundId, Message message) {
-        appendToTurn(resolveUserId(), roundId, message);
+        String conversationId = resolveConversationId();
+        if (conversationId == null) {
+            appendToTurn(resolveUserId(), roundId, message);
+            return;
+        }
+        jdbc.update("""
+            INSERT INTO context_messages
+            (user_id, conversation_id, message_json, round_id, seq, turn_status, turn_initiator)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, resolveUserId(), conversationId, serialize(message), roundId,
+                nextSeq(resolveUserId(), conversationId), TurnStatus.RUNNING.name(),
+                TurnInitiator.USER.name());
     }
 
     @Override
     public void closeTurn(String roundId) {
-        closeTurn(resolveUserId(), roundId);
+        String conversationId = resolveConversationId();
+        if (conversationId == null) closeTurn(resolveUserId(), roundId);
+        else jdbc.update("""
+            UPDATE context_messages SET turn_status = ?
+            WHERE user_id = ? AND conversation_id = ? AND round_id = ?
+        """, TurnStatus.COMPLETED.name(), resolveUserId(), conversationId, roundId);
     }
 
     @Override
     public void markTurnIncomplete(String roundId) {
-        markTurnIncomplete(resolveUserId(), roundId);
+        String conversationId = resolveConversationId();
+        if (conversationId == null) markTurnIncomplete(resolveUserId(), roundId);
+        else jdbc.update("""
+            UPDATE context_messages SET turn_status = ?
+            WHERE user_id = ? AND conversation_id = ? AND round_id = ?
+        """, TurnStatus.INCOMPLETE.name(), resolveUserId(), conversationId, roundId);
+    }
+
+    private List<ConversationTurn> getTurnsForConversation(
+            String userId, String conversationId, int maxTurns) {
+        int rowLimit = Math.max(100, maxTurns * 20);
+        List<MessageRow> rows = jdbc.query("""
+            SELECT id, message_json, round_id, seq, turn_status, turn_initiator, created_at
+            FROM context_messages
+            WHERE user_id = ? AND conversation_id = ?
+            ORDER BY created_at DESC, id DESC LIMIT ?
+        """, (rs, rowNum) -> new MessageRow(
+                rs.getLong("id"), rs.getString("message_json"), rs.getString("round_id"),
+                nullableLong(rs, "seq"), rs.getString("turn_status"),
+                rs.getString("turn_initiator"), rs.getLong("created_at")),
+                userId, conversationId, rowLimit);
+        Map<String, List<MessageRow>> byRound = new LinkedHashMap<>();
+        for (MessageRow row : rows) {
+            String key = row.roundId() == null ? "orphan-" + row.id() : row.roundId();
+            byRound.computeIfAbsent(key, ignored -> new ArrayList<>()).add(row);
+        }
+        List<ConversationTurn> turns = new ArrayList<>();
+        for (Map.Entry<String, List<MessageRow>> entry : byRound.entrySet()) {
+            List<MessageRow> group = entry.getValue();
+            group.sort(Comparator.comparingLong(MessageRow::id));
+            String statusValue = group.get(0).turnStatus();
+            TurnStatus status = statusValue == null
+                    ? TurnStatus.COMPLETED : TurnStatus.valueOf(statusValue);
+            if (status == TurnStatus.INCOMPLETE) continue;
+            List<Message> messages = group.stream().map(row -> deserialize(row.messageJson()))
+                    .filter(message -> message != null && message.role() != null
+                            && message.content() != null)
+                    .toList();
+            if (messages.isEmpty()) continue;
+            String initiatorValue = group.get(0).turnInitiator();
+            TurnInitiator initiator = initiatorValue == null
+                    ? TurnInitiator.USER : TurnInitiator.valueOf(initiatorValue);
+            Long seq = group.get(0).seq();
+            turns.add(new ConversationTurn(entry.getKey(), seq == null ? group.get(0).id() : seq,
+                    status, initiator, messages,
+                    Instant.ofEpochSecond(group.get(0).createdAt())));
+            if (turns.size() >= maxTurns) break;
+        }
+        return turns;
     }
 
     /**
@@ -522,6 +651,22 @@ public class SqliteContextStore implements ContextStore {
         }
     }
 
+    private List<Message> deserializeChronologically(List<String> newestFirstJsons) {
+        List<Message> result = new ArrayList<>();
+        for (int i = newestFirstJsons.size() - 1; i >= 0; i--) {
+            Message message = deserialize(newestFirstJsons.get(i));
+            if (message != null && message.role() != null && message.content() != null) {
+                result.add(message);
+            }
+        }
+        return result;
+    }
+
+    private static Long nullableLong(ResultSet rs, String column) throws SQLException {
+        long value = rs.getLong(column);
+        return rs.wasNull() ? null : value;
+    }
+
     /** Turn 读取的原始行。 */
     private record MessageRow(long id, String messageJson, String roundId,
                               Long seq, String turnStatus, String turnInitiator,
@@ -531,5 +676,46 @@ public class SqliteContextStore implements ContextStore {
 
     private String resolveUserId() {
         return userExecutionContext.requireUserId();
+    }
+
+    private String resolveConversationId() {
+        return userExecutionContext.currentConversationIdOrNull();
+    }
+
+    private long nextSeq(String userId, String conversationId) {
+        Long max = jdbc.queryForObject("""
+            SELECT COALESCE(MAX(seq), 0) FROM context_messages
+            WHERE user_id = ? AND conversation_id = ?
+        """, Long.class, userId, conversationId);
+        return (max == null ? 0 : max) + 1;
+    }
+
+    @Override
+    public void clear(String userId, String conversationId) {
+        jdbc.update("DELETE FROM context_messages WHERE user_id = ? AND conversation_id = ?",
+                userId, conversationId);
+        log.debug("已清除 SQLite 对话上下文 | userId={} | conversationId={}",
+                userId, conversationId);
+    }
+
+    private void appendCurrent(Message message) {
+        String conversationId = resolveConversationId();
+        if (conversationId == null) append(resolveUserId(), message);
+        else append(resolveUserId(), conversationId, message);
+    }
+
+    private void append(String userId, String conversationId, Message message) {
+        jdbc.update("""
+            INSERT INTO context_messages (user_id, conversation_id, message_json)
+            VALUES (?, ?, ?)
+        """, userId, conversationId, serialize(message));
+        jdbc.update("""
+            DELETE FROM context_messages
+            WHERE user_id = ? AND conversation_id = ? AND id NOT IN (
+                SELECT id FROM context_messages
+                WHERE user_id = ? AND conversation_id = ?
+                ORDER BY created_at DESC, id DESC LIMIT ?
+            )
+        """, userId, conversationId, userId, conversationId, props.getMaxMessages());
     }
 }

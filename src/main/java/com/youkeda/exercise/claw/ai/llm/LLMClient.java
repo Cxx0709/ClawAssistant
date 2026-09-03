@@ -21,12 +21,17 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -420,10 +425,14 @@ public class LLMClient {
         // index → 分片累积器（tool_calls 增量跨 chunk 拼接）
         Map<Integer, StreamToolCallAccumulator> toolCallAccumulators = new LinkedHashMap<>();
 
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
+        Duration idleTimeout = Duration.ofSeconds(
+                Math.max(1, properties.getStreamIdleTimeoutSeconds()));
+        try (StreamLineReader reader = new StreamLineReader(response.body())) {
+            while (true) {
+                String line = reader.readLine(idleTimeout);
+                if (line == null) {
+                    break;
+                }
                 String trimmed = line.trim();
                 if (!trimmed.startsWith("data:")) {
                     continue;
@@ -478,6 +487,91 @@ public class LLMClient {
         }
 
         return buildStreamedResponse(content, toolCallAccumulators, finishReason);
+    }
+
+    /**
+     * 在独立守护线程中执行可能无限阻塞的 {@link BufferedReader#readLine()}，调用线程通过队列
+     * 设置逐行空闲超时。关闭时同时取消 HTTP 响应体，确保断流连接不会长期占用 webchat 线程。
+     */
+    static final class StreamLineReader implements AutoCloseable {
+        private final InputStream inputStream;
+        private final BufferedReader reader;
+        private final BlockingQueue<StreamLine> lines = new LinkedBlockingQueue<>();
+        private final AtomicBoolean closed = new AtomicBoolean(false);
+        private final Thread readerThread;
+
+        StreamLineReader(InputStream inputStream) {
+            this.inputStream = inputStream;
+            this.reader = new BufferedReader(
+                    new InputStreamReader(inputStream, StandardCharsets.UTF_8));
+            this.readerThread = new Thread(this::readLoop, "llm-stream-reader");
+            this.readerThread.setDaemon(true);
+            this.readerThread.start();
+        }
+
+        String readLine(Duration idleTimeout) throws IOException {
+            StreamLine next;
+            try {
+                next = lines.poll(Math.max(1L, idleTimeout.toMillis()), TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("LLM 流式读取被中断", e);
+            }
+            if (next == null) {
+                throw new HttpTimeoutException(
+                        "LLM 流式响应超过 " + idleTimeout.toSeconds() + " 秒无数据");
+            }
+            if (next.error() != null) {
+                throw next.error();
+            }
+            return next.endOfStream() ? null : next.line();
+        }
+
+        private void readLoop() {
+            try {
+                while (!closed.get()) {
+                    String line = reader.readLine();
+                    if (line == null) {
+                        lines.offer(StreamLine.end());
+                        return;
+                    }
+                    lines.offer(StreamLine.data(line));
+                }
+            } catch (IOException e) {
+                if (!closed.get()) {
+                    lines.offer(StreamLine.failure(e));
+                }
+            }
+        }
+
+        @Override
+        public void close() {
+            if (!closed.compareAndSet(false, true)) {
+                return;
+            }
+            try {
+                // 不调用 BufferedReader.close()：readLine() 持有其内部锁时，跨线程 close
+                // 也会等锁。直接关闭底层 HTTP 流会取消订阅并解除阻塞。
+                inputStream.close();
+            } catch (IOException ignored) {
+                // 连接可能已经由 HttpClient 关闭。
+            }
+            readerThread.interrupt();
+        }
+    }
+
+    private record StreamLine(String line, IOException error, boolean endOfStream) {
+        static StreamLine data(String line) {
+            return new StreamLine(line, null, false);
+        }
+
+        static StreamLine failure(IOException error) {
+            return new StreamLine(null, error, false);
+        }
+
+        static StreamLine end() {
+            return new StreamLine(null, null, true);
+        }
     }
 
     /** 单次流式响应中的一个 tool_call 分片累积器。 */

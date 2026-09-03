@@ -43,6 +43,8 @@ server.servlet.session.cookie.same-site=lax
 llm.api-key=${DASHSCOPE_API_KEY:${vision.api-key:}}
 llm.base-url=https://dashscope.aliyuncs.com/compatible-mode/v1
 llm.model=qwen3.6-plus
+# 流式响应体连续无数据的超时；避免上游已返回响应头但正文断流时页面永久停在“思考中”
+llm.stream-idle-timeout-seconds=30
 
 # ============================================
 # Vision Model Configuration
