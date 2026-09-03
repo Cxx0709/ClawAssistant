@@ -63,7 +63,8 @@ public class SkillLlmRouter {
         String prompt = "你是一个意图分类器。分析用户消息的意图，输出JSON格式。\n"
                 + "可用 Skill:\n" + skillDesc + "\n"
                 + "如果都不匹配，输出 common。\n"
-                + "输出格式: {\"primaryIntent\": \"skill名\", \"confidence\": 0.0~1.0, \"reason\": \"...\"}\n"
+                + "输出格式: {\"primaryIntent\": \"skill名\", \"confidence\": 0.0~1.0, \"reason\": \"...\", \"secondaryIntents\": [\"skill名2\", ...]}\n"
+                + "如果消息涉及多个技能意图，填入 secondaryIntents。\n"
                 + "只输出JSON，不要其他内容。";
 
         Future<SkillRoutingResult> future = null;
@@ -106,10 +107,27 @@ public class SkillLlmRouter {
                 return SkillRoutingResult.fallback();
             }
 
-            return new SkillRoutingResult(intent, Set.of(),
+            // 解析辅助技能（可选）
+            Set<String> secondaryIntents = new java.util.HashSet<>();
+            if (node.has("secondaryIntents") && node.get("secondaryIntents").isArray()) {
+                for (JsonNode secondaryNode : node.get("secondaryIntents")) {
+                    String secondaryIntent = secondaryNode.asText();
+                    if (secondaryIntent != null && !secondaryIntent.isBlank() && !"common".equals(secondaryIntent)) {
+                        secondaryIntents.add(secondaryIntent);
+                    }
+                }
+            }
+
+            String reason = node.has("reason") ? node.get("reason").asText() : "LLM Router match";
+
+            // 多技能激活
+            if (!secondaryIntents.isEmpty()) {
+                return SkillRoutingResult.multi(intent, secondaryIntents, Set.of(), confidence, reason);
+            }
+
+            return SkillRoutingResult.of(intent, Set.of(),
                     SkillRoutingResult.SkillRoutingAction.ACTIVATE,
-                    confidence,
-                    node.has("reason") ? node.get("reason").asText() : "LLM Router match");
+                    confidence, reason);
         } catch (JsonProcessingException e) {
             log.error("Failed to parse LLM Router response: {}", response, e);
             return SkillRoutingResult.fallback();

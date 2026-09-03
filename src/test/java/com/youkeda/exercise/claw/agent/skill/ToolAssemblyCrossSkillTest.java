@@ -287,7 +287,7 @@ class ToolAssemblyCrossSkillTest {
         // Skill routing
         SkillRouter skillRouter = mock(SkillRouter.class);
         SkillRoutingResult routingResult = activeSkill != null
-                ? new SkillRoutingResult(activeSkill.name(), Set.of(),
+                ? SkillRoutingResult.of(activeSkill.name(), Set.of(),
                         SkillRoutingResult.SkillRoutingAction.ACTIVATE, 0.9,
                         "test routing to " + activeSkill.name())
                 : SkillRoutingResult.fallback();

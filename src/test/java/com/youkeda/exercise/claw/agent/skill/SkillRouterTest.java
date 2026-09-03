@@ -16,7 +16,7 @@ class SkillRouterTest {
 
     @Test
     void testRoutingResult_activation() {
-        SkillRoutingResult result = new SkillRoutingResult("travel", Set.of("weather"),
+        SkillRoutingResult result = SkillRoutingResult.of("travel", Set.of("weather"),
                 SkillRoutingResult.SkillRoutingAction.ACTIVATE, 0.9, "test");
         assertEquals("travel", result.primarySkill());
         assertTrue(result.supportingSkills().contains("weather"));
@@ -26,7 +26,7 @@ class SkillRouterTest {
 
     @Test
     void testRoutingResult_switch() {
-        SkillRoutingResult result = new SkillRoutingResult("weather", Set.of(),
+        SkillRoutingResult result = SkillRoutingResult.of("weather", Set.of(),
                 SkillRoutingResult.SkillRoutingAction.SWITCH, 0.85, "explicit switch");
         assertEquals("weather", result.primarySkill());
         assertTrue(result.supportingSkills().isEmpty());
@@ -35,6 +35,6 @@ class SkillRouterTest {
 
     @Test
     void testRoutingAction_values() {
-        assertEquals(5, SkillRoutingResult.SkillRoutingAction.values().length);
+        assertEquals(6, SkillRoutingResult.SkillRoutingAction.values().length);
     }
 }

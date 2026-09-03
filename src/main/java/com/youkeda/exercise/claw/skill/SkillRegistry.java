@@ -17,6 +17,7 @@ public class SkillRegistry {
     private static final Logger log = LoggerFactory.getLogger(SkillRegistry.class);
 
     private final Map<String, SkillDefinition> skills = new ConcurrentHashMap<>();
+    private final Map<String, SkillDefinition> dynamicSkills = new ConcurrentHashMap<>();
     private final Map<String, SkillHealth> healthCache = new ConcurrentHashMap<>();
     private final SkillsProperties properties;
     private final ToolRegistry functionRegistry;
@@ -113,5 +114,72 @@ public class SkillRegistry {
 
     public Map<String, SkillHealth> getAllHealth() {
         return Collections.unmodifiableMap(healthCache);
+    }
+
+    /**
+     * 动态注册技能。
+     */
+    public void registerDynamic(SkillDefinition skill) {
+        if (skill == null || skill.name() == null || skill.name().isBlank()) {
+            log.warn("Cannot register null or empty-named skill");
+            return;
+        }
+
+        String name = skill.name();
+        SkillHealth health = validate(name, skill);
+        healthCache.put(name, health);
+
+        if (health.status() != SkillHealth.SkillStatus.UNAVAILABLE) {
+            dynamicSkills.put(name, skill);
+            skills.put(name, skill);
+            log.info("Dynamically registered skill [{}]: {}", name, health.status());
+        } else {
+            log.warn("Dynamic skill [{}] is UNAVAILABLE: {}", name, health.missingRequiredTools());
+        }
+    }
+
+    /**
+     * 刷新所有动态技能。
+     */
+    public void refreshDynamicSkills() {
+        log.info("Refreshing {} dynamic skills", dynamicSkills.size());
+        for (Map.Entry<String, SkillDefinition> entry : dynamicSkills.entrySet()) {
+            String name = entry.getKey();
+            SkillDefinition skill = entry.getValue();
+
+            SkillHealth health = validate(name, skill);
+            healthCache.put(name, health);
+
+            if (health.status() != SkillHealth.SkillStatus.UNAVAILABLE) {
+                skills.put(name, skill);
+            } else {
+                skills.remove(name);
+                log.warn("Dynamic skill [{}] became UNAVAILABLE after refresh", name);
+            }
+        }
+    }
+
+    /**
+     * 移除动态技能。
+     */
+    public void unregisterDynamic(String name) {
+        dynamicSkills.remove(name);
+        skills.remove(name);
+        healthCache.remove(name);
+        log.info("Unregistered dynamic skill: {}", name);
+    }
+
+    /**
+     * 获取所有动态技能名称。
+     */
+    public Set<String> getDynamicSkillNames() {
+        return Collections.unmodifiableSet(dynamicSkills.keySet());
+    }
+
+    /**
+     * 检查技能是否为动态注册。
+     */
+    public boolean isDynamic(String name) {
+        return dynamicSkills.containsKey(name);
     }
 }

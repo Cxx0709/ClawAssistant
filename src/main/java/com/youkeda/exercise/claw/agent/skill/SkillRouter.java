@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Component
 public class SkillRouter {
@@ -41,6 +42,9 @@ public class SkillRouter {
 
     /** 连续低置信度释放阈值：inactivityCount 达到该值后升级为「彻底释放」 */
     private static final int LOW_CONFIDENCE_RELEASE_LIMIT = 2;
+
+    /** 高置信度阈值：用于多技能并行激活判断 */
+    private static final double HIGH_CONFIDENCE_THRESHOLD = 0.75;
 
     public SkillRouter(SkillRegistry skillRegistry,
                        SkillSessionStore sessionStore,
@@ -93,7 +97,7 @@ public class SkillRouter {
 
         if (session.context().containsKey("pendingAction")) {
             if (isPendingCancellation(message)) {
-                return new SkillRoutingResult("common", Set.of(),
+                return SkillRoutingResult.of("common", Set.of(),
                         SkillRoutingResult.SkillRoutingAction.DEACTIVATE, 1.0,
                         "pending interaction cancelled");
             }
@@ -115,11 +119,11 @@ public class SkillRouter {
             // 待确认状态超时保护：超过会话超时时间后释放 pendingAction，防止 skill 被长期锁定。
             long minutesSinceActivity = ChronoUnit.MINUTES.between(session.lastActivityAt(), Instant.now());
             if (minutesSinceActivity >= config.sessionTimeoutMinutes()) {
-                return new SkillRoutingResult("common", Set.of(),
+                return SkillRoutingResult.of("common", Set.of(),
                         SkillRoutingResult.SkillRoutingAction.DEACTIVATE, 0.0,
                         "pending interaction timeout, release " + session.activeSkill());
             }
-            return new SkillRoutingResult(session.activeSkill(), Set.of(),
+            return SkillRoutingResult.of(session.activeSkill(), Set.of(),
                     SkillRoutingResult.SkillRoutingAction.CONTINUE, 0.95,
                     "pending interaction response for " + session.activeSkill());
         }
@@ -130,7 +134,7 @@ public class SkillRouter {
         boolean hasKeyword = pendingKeywords.stream().anyMatch(message::contains);
 
         if (hasKeyword) {
-            return new SkillRoutingResult(session.activeSkill(), Set.of(),
+            return SkillRoutingResult.of(session.activeSkill(), Set.of(),
                     SkillRoutingResult.SkillRoutingAction.CONTINUE, 0.95,
                     "pending interaction confirmation for " + session.activeSkill());
         }
@@ -209,7 +213,7 @@ public class SkillRouter {
             }
 
             if (matched && confidence >= 0.6) {
-                return new SkillRoutingResult(skill.name(), Set.of(),
+                return SkillRoutingResult.of(skill.name(), Set.of(),
                         SkillRoutingResult.SkillRoutingAction.SWITCH,
                         confidence, "explicit switch to " + skill.name());
             }
@@ -262,7 +266,7 @@ public class SkillRouter {
                             ? SkillRoutingResult.SkillRoutingAction.CONTINUE
                             : SkillRoutingResult.SkillRoutingAction.ACTIVATE)
                     .orElse(SkillRoutingResult.SkillRoutingAction.ACTIVATE);
-            return new SkillRoutingResult(top.skillName(), Set.of(), action, top.confidence(),
+            return SkillRoutingResult.of(top.skillName(), Set.of(), action, top.confidence(),
                     "single keyword trigger: " + top.skillName());
         }
 
@@ -277,9 +281,30 @@ public class SkillRouter {
 
         // Conflict if same priority
         if (matches.size() > 1 && matches.get(1).priority() == top.priority()) {
-            return new SkillRoutingResult(top.skillName(), Set.of(),
+            return SkillRoutingResult.of(top.skillName(), Set.of(),
                     SkillRoutingResult.SkillRoutingAction.NONE,
                     0.5, "priority conflict, fall through to LLM");
+        }
+
+        // 多技能并行激活：当多个技能置信度都高时，使用 MULTI_ACTIVATE
+        if (matches.size() > 1 && matches.get(1).confidence() >= HIGH_CONFIDENCE_THRESHOLD) {
+            Set<String> secondarySkills = matches.stream()
+                    .skip(1)
+                    .filter(m -> m.confidence() >= HIGH_CONFIDENCE_THRESHOLD)
+                    .limit(2)  // 最多2个辅助技能
+                    .map(SkillMatchResult::skillName)
+                    .collect(java.util.stream.Collectors.toSet());
+
+            if (!secondarySkills.isEmpty()) {
+                SkillRoutingResult.SkillRoutingAction action =
+                        sessionOpt.map(s -> s.activeSkill().equals(top.skillName())
+                                ? SkillRoutingResult.SkillRoutingAction.CONTINUE
+                                : SkillRoutingResult.SkillRoutingAction.MULTI_ACTIVATE)
+                        .orElse(SkillRoutingResult.SkillRoutingAction.MULTI_ACTIVATE);
+
+                return SkillRoutingResult.multi(top.skillName(), secondarySkills, Set.of(),
+                        top.confidence(), "multi-skill trigger: " + top.skillName() + " + " + secondarySkills);
+            }
         }
 
         SkillRoutingResult.SkillRoutingAction action =
@@ -287,7 +312,7 @@ public class SkillRouter {
                         ? SkillRoutingResult.SkillRoutingAction.CONTINUE
                         : SkillRoutingResult.SkillRoutingAction.ACTIVATE)
                 .orElse(SkillRoutingResult.SkillRoutingAction.ACTIVATE);
-        return new SkillRoutingResult(top.skillName(), Set.of(), action, top.confidence(),
+        return SkillRoutingResult.of(top.skillName(), Set.of(), action, top.confidence(),
                 "trigger match (priority resolved): " + top.skillName());
     }
 
@@ -297,20 +322,20 @@ public class SkillRouter {
 
         long minutesSinceActivity = ChronoUnit.MINUTES.between(session.lastActivityAt(), Instant.now());
         if (minutesSinceActivity >= config.sessionTimeoutMinutes()) {
-            return new SkillRoutingResult("common", Set.of(),
+            return SkillRoutingResult.of("common", Set.of(),
                     SkillRoutingResult.SkillRoutingAction.DEACTIVATE, 0.0,
                     "session timeout for " + session.activeSkill());
         }
 
         if (session.inactivityCount() >= config.inactiveLimit()) {
-            return new SkillRoutingResult("common", Set.of(),
+            return SkillRoutingResult.of("common", Set.of(),
                     SkillRoutingResult.SkillRoutingAction.DEACTIVATE, 0.0,
                     "inactivity limit reached for " + session.activeSkill());
         }
 
         Set<String> resumeKeywords = Set.of("继续", "刚才", "接着", "上一步");
         if (resumeKeywords.stream().anyMatch(message::contains) && session.previousSkill() != null) {
-            return new SkillRoutingResult(session.previousSkill(), Set.of(),
+            return SkillRoutingResult.of(session.previousSkill(), Set.of(),
                     SkillRoutingResult.SkillRoutingAction.SWITCH, 0.9,
                     "resume previous skill: " + session.previousSkill());
         }
@@ -324,7 +349,7 @@ public class SkillRouter {
 
         // 高置信度续接：当前消息与 activeSkill 强关联，保持 skill 继续处理
         if (match.matched() && match.confidence() >= CONTINUATION_MIN_CONFIDENCE) {
-            return new SkillRoutingResult(session.activeSkill(), Set.of(),
+            return SkillRoutingResult.of(session.activeSkill(), Set.of(),
                     SkillRoutingResult.SkillRoutingAction.CONTINUE, match.confidence(),
                     "continuation of " + session.activeSkill());
         }
@@ -335,11 +360,11 @@ public class SkillRouter {
         // 连续低置信度达到 LOW_CONFIDENCE_RELEASE_LIMIT 后才升级为「彻底释放」（DEACTIVATE），
         // 防止 skill 长期占用导致工具白名单被错误限制。
         if (session.inactivityCount() >= LOW_CONFIDENCE_RELEASE_LIMIT) {
-            return new SkillRoutingResult("common", Set.of(),
+            return SkillRoutingResult.of("common", Set.of(),
                     SkillRoutingResult.SkillRoutingAction.DEACTIVATE, 0.0,
                     "consecutive low-confidence continuation, fully release " + session.activeSkill());
         }
-        return new SkillRoutingResult(session.activeSkill(), Set.of(),
+        return SkillRoutingResult.of(session.activeSkill(), Set.of(),
                 SkillRoutingResult.SkillRoutingAction.CONTINUE, 0.1,
                 "low-confidence continuation, keep " + session.activeSkill());
     }

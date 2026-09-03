@@ -41,7 +41,7 @@ class ReActAgentExecutorSkillExecutionTest {
         AgentActivityRecorder activityRecorder = mock(AgentActivityRecorder.class);
         when(activityRecorder.beginRequest()).thenReturn("request-1");
         when(skillRouter.route("最近有什么值得关注", "owner"))
-                .thenReturn(new SkillRoutingResult(
+                .thenReturn(SkillRoutingResult.of(
                         "information-scout", Set.of(),
                         SkillRoutingResult.SkillRoutingAction.ACTIVATE,
                         0.95, "explicit request"));
