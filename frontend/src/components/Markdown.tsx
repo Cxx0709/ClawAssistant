@@ -1,8 +1,9 @@
+import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 /** Markdown 渲染（GFM：表格 / 列表 / 引用 / 代码块），外层套 .md 排版样式。 */
-export default function Markdown({ content }: { content: string }) {
+function Markdown({ content }: { content: string }) {
   return (
     <div className="md">
       <ReactMarkdown
@@ -20,3 +21,5 @@ export default function Markdown({ content }: { content: string }) {
     </div>
   );
 }
+
+export default memo(Markdown);

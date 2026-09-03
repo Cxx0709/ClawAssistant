@@ -66,11 +66,18 @@ public class AgentActivityRecorder {
 
     public void toolFinished(String requestId, String skillName, String toolName,
                              boolean success, long durationMs) {
+        toolFinished(requestId, skillName, toolName, success, durationMs, null);
+    }
+
+    public void toolFinished(String requestId, String skillName, String toolName,
+                             boolean success, long durationMs, String detail) {
+        String summary = success ? "工具执行完成"
+                : (detail == null || detail.isBlank() ? "工具执行失败" : safeReason(detail));
         record(new AgentActivityEvent(
                 requestId,
                 success ? ActivityEventType.TOOL_SUCCEEDED : ActivityEventType.TOOL_FAILED,
                 skillName, toolName, success ? "SUCCESS" : "FAILED",
-                success ? "工具执行完成" : "工具执行失败",
+                summary,
                 Math.max(0L, durationMs)));
     }
 

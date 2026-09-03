@@ -31,9 +31,9 @@ class TravelReplyGuardTest {
 
     @Test
     void blocksCompletedPlanWhenCollectNeedsMoreInfo() {
-        // travel_collect 返回 NEED_MORE_INFORMATION（Parser 解析为 FAILED）→ 只能追问
+        // travel_collect 返回 NEED_MORE_INFORMATION（Parser 解析为 PARTIAL）→ 只能追问
         GuardResult r = validate("我要去三亚", "已规划好了完整行程",
-                Map.of("travel_collect", ResultStatus.FAILED));
+                Map.of("travel_collect", ResultStatus.PARTIAL));
         assertFalse(r.allowed());
     }
 
@@ -66,5 +66,31 @@ class TravelReplyGuardTest {
         GuardResult r = validate("三亚现在天气怎么样", "三亚今天晴。",
                 Map.of());
         assertTrue(r.allowed());
+    }
+
+    @Test
+    void allowsPlanWhenAllCollectedMappedToSuccess() {
+        // 修复前 ALL_COLLECTED 被解析为 FAILED，导致正则命中后误拦
+        GuardResult r = validate("帮我规划行程", "已为你规划好三亚两日游方案：Day 1...",
+                Map.of("travel_collect", ResultStatus.SUCCESS));
+        assertTrue(r.allowed());
+    }
+
+    @Test
+    void allowsBudgetConclusionAfterPartialCost() {
+        // calculate_cost 返回 PARTIAL（如酒店价格缺失）时不应强制拦截金额描述
+        GuardResult r = validate("帮我规划行程", "已为你规划好方案，总费用约为 1000 元，部分住宿待确认",
+                Map.of(
+                        "travel_collect", ResultStatus.SUCCESS,
+                        "travel_calculate_cost", ResultStatus.PARTIAL
+                ));
+        assertTrue(r.allowed());
+    }
+
+    @Test
+    void stillBlocksBudgetConclusionWithoutCostTool() {
+        GuardResult r = validate("帮我规划行程", "总费用约 1200 元",
+                Map.of("travel_collect", ResultStatus.SUCCESS));
+        assertFalse(r.allowed());
     }
 }

@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
@@ -26,6 +27,64 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ExecutionLoopSkillReplyGuardTest {
+
+    @Test
+    void usesStructuredQuestionsWhenLlmReturnsEmptyAfterToolResult() {
+        LLMClient llm = mock(LLMClient.class);
+        when(llm.chatWithTools(any(), any(), any()))
+                .thenReturn(new LLMResponse(null, List.of(), "stop"));
+
+        ExecutionLoop loop = new ExecutionLoop(
+                llm, mock(ToolExecutor.class), mock(PlanStore.class),
+                mock(PlanValidator.class), new ObjectMapper(), List.of(),
+                new SkillReplyGuardRegistry(List.of()));
+        List<Message> messages = new ArrayList<>();
+        messages.add(new Message("user", "帮我规划杭州4日游"));
+        messages.add(new Message("tool", """
+                {"status":"NEED_MORE_INFORMATION","questions":[
+                  "从哪里出发或在哪里集合？",
+                  "预计多少人参加？",
+                  "计划什么时候出发？"
+                ]}
+                """, null, null, null, "tc-1", null));
+
+        ExecutionLoop.Result result = loop.run(
+                "sys", messages, List.of(), null,
+                mock(ToolExecutionContext.class), SkillSession.create("u"),
+                "req", "travel", "帮我规划杭州4日游");
+
+        assertEquals(ExecutionLoop.LoopStatus.TEXT_REPLY, result.status());
+        assertTrue(result.reply().contains("从哪里出发"));
+        assertTrue(result.reply().contains("多少人参加"));
+        assertFalse(result.reply().contains("什么时候出发"), "降级追问一次最多展示两项");
+        verify(llm, times(1)).chatWithTools(any(), any(), any());
+    }
+
+    @Test
+    void retriesOneEmptyTextResponseWithoutTools() {
+        LLMClient llm = mock(LLMClient.class);
+        when(llm.chatWithTools(any(), any(), any()))
+                .thenReturn(new LLMResponse(" ", List.of(), "stop"))
+                .thenReturn(new LLMResponse("请告诉我出发城市。", List.of(), "stop"));
+
+        ExecutionLoop loop = new ExecutionLoop(
+                llm, mock(ToolExecutor.class), mock(PlanStore.class),
+                mock(PlanValidator.class), new ObjectMapper(), List.of(),
+                new SkillReplyGuardRegistry(List.of()));
+        List<Message> messages = new ArrayList<>();
+        messages.add(new Message("user", "帮我规划杭州4日游"));
+
+        ExecutionLoop.Result result = loop.run(
+                "sys", messages, List.of(mock(com.youkeda.exercise.claw.ai.llm.ToolDefinition.class)),
+                null, mock(ToolExecutionContext.class), SkillSession.create("u"),
+                "req", "travel", "帮我规划杭州4日游");
+
+        assertEquals("请告诉我出发城市。", result.reply());
+        verify(llm, times(2)).chatWithTools(any(), any(), any());
+        assertTrue(messages.stream().anyMatch(message ->
+                message.role() == MessageRole.SYSTEM
+                        && message.content().contains("响应正文为空")));
+    }
 
     @Test
     void textReplyBlockedByGuardInjectsCorrectionAndRetries() {

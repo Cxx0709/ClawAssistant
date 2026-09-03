@@ -378,6 +378,7 @@ public class ReActAgentExecutor implements AgentExecutor {
                 contextStore.appendToTurn(roundId, new Message("assistant", reply));
                 contextStore.closeTurn(roundId);
                 longTermMemoryService.processAndStoreAsync(userMessage, reply);
+                session = maybeSetTravelPendingAction(session, reply, userMessage);
                 skillSessionStore.save(userId, session);
                 activityRecorder.requestCompleted(
                         activityRequestId, System.currentTimeMillis() - requestStartedAt);
@@ -407,6 +408,40 @@ public class ReActAgentExecutor implements AgentExecutor {
     }
 
     // ==================== 错误与兜底 ====================
+
+    /**
+     * 旅行技能：当回复包含需要用户决策的内容时，设置 pendingAction，
+     * 确保下一轮用户回复能被路由回 travel skill 而非 common。
+     *
+     * <p>检测场景：
+     * <ul>
+     *   <li>超预算决策（"超预算"/"超支" + 选项）</li>
+     *   <li>方案选择（"方案A"/"方案B"/"你倾向"）</li>
+     * </ul>
+     */
+    private SkillSession maybeSetTravelPendingAction(
+            SkillSession session, String reply, String userMessage) {
+        if (session == null) return session;
+        if (!"travel".equals(session.activeSkill())) return session;
+        if (reply == null || reply.isBlank()) return session;
+
+        // 已有 pendingAction 则不覆盖
+        if (session.context().containsKey("pendingAction")) return session;
+
+        boolean needsDecision = BUDGET_DECISION.matcher(reply).find()
+                || PLAN_SELECTION.matcher(reply).find();
+        if (needsDecision) {
+            log.info("旅行回复需要用户决策，设置 pendingAction");
+            return session.withPendingAction("travel_user_decision", null);
+        }
+        return session;
+    }
+
+    private static final java.util.regex.Pattern BUDGET_DECISION = java.util.regex.Pattern.compile(
+            "超预算|超支|接受超支|调整到预算|更新预算|预算上限");
+
+    private static final java.util.regex.Pattern PLAN_SELECTION = java.util.regex.Pattern.compile(
+            "方案[A-Z]|你倾向|你选择|请选择|选哪个|选哪种|哪种方案");
 
     private String handleError(String roundId) {
         contextStore.appendToTurn(roundId, new Message("assistant", ERROR_REPLY));

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.text.Normalizer;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -158,8 +159,22 @@ public class TravelPlanService {
     }
 
     private ObjectNode selectOption(TravelPlanDraft draft, String optionId) {
+        if (draft.getOptions().isEmpty()) {
+            return saveError(draft, "OPTIONS_NOT_SAVED",
+                    "当前没有已保存的候选方案，请先生成并保存候选方案。", false);
+        }
         TravelPlanOption selected = findOption(draft, optionId);
-        if (selected == null) return saveError(draft, "未找到候选方案：" + optionId);
+        if (selected == null) {
+            ObjectNode result = saveError(draft, "OPTION_NOT_FOUND",
+                    "未找到候选方案：" + optionId, false);
+            ArrayNode available = result.putArray("available_options");
+            draft.getOptions().forEach(option -> {
+                ObjectNode item = available.addObject();
+                item.put("option_id", option.getOptionId());
+                item.put("display_name", option.getDisplayName());
+            });
+            return result;
+        }
 
         draft.setSelectedOptionId(selected.getOptionId());
 
@@ -284,7 +299,9 @@ public class TravelPlanService {
             missing.put("participant_count", "预计多少人参加？");
         if (blank(draft.getTravelDate()))
             missing.put("travel_date", "计划什么时候出发？具体日期或大致时间都可以。");
-        if (blank(draft.getDuration()) || draft.getDays() == null || draft.getDays() <= 0)
+        // days 是规划所需的规范化字段；模型直接从“4日游”提取出 days=4 时，
+        // 不应仅因没有同时复制一份 duration 文本而再次追问天数。
+        if (draft.getDays() == null || draft.getDays() <= 0)
             missing.put("duration", "计划玩多久？请说明天数，例如1天或2天1晚。");
         if (!positive(draft.getBudgetTotal()) && !positive(draft.getBudgetPerPerson()))
             missing.put("budget", "可接受的预算上限是多少？请提供总预算或人均预算。");
@@ -390,18 +407,58 @@ public class TravelPlanService {
     }
 
     private ObjectNode saveError(TravelPlanDraft draft, String message) {
+        return saveError(draft, "INVALID_ARGUMENT", message, false);
+    }
+
+    private ObjectNode saveError(TravelPlanDraft draft, String errorCode,
+                                 String message, boolean retryable) {
         ObjectNode result = objectMapper.createObjectNode();
         result.put("status", "INVALID_ARGUMENT");
+        result.put("error_code", errorCode);
         result.put("error", message);
+        result.put("retryable", retryable);
         refreshState(result, draft);
         return result;
     }
 
     private TravelPlanOption findOption(TravelPlanDraft draft, String optionId) {
         if (blank(optionId)) return null;
-        return draft.getOptions().stream()
-                .filter(option -> optionId.equals(option.getOptionId()))
-                .findFirst().orElse(null);
+        String reference = canonicalOptionReference(optionId);
+        Optional<TravelPlanOption> direct = draft.getOptions().stream()
+                .filter(option -> reference.equals(canonicalOptionReference(option.getOptionId()))
+                        || reference.equals(canonicalOptionReference(option.getDisplayName())))
+                .findFirst();
+        if (direct.isPresent()) return direct.get();
+
+        Integer index = optionIndex(optionId);
+        return index != null && index >= 0 && index < draft.getOptions().size()
+                ? draft.getOptions().get(index) : null;
+    }
+
+    /** Normalize common user references: plan_b / 方案B / B all become the same key. */
+    private static String canonicalOptionReference(String value) {
+        if (blank(value)) return "";
+        return Normalizer.normalize(value, Normalizer.Form.NFKC)
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("\\s+", "")
+                .replaceFirst("^(方案|plan)[_\\-:：]*", "")
+                .replaceAll("[_\\-:：]", "");
+    }
+
+    private static Integer optionIndex(String value) {
+        String normalized = Normalizer.normalize(value, Normalizer.Form.NFKC)
+                .toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
+        Map<String, Integer> aliases = Map.ofEntries(
+                Map.entry("第一个", 0), Map.entry("第一", 0), Map.entry("1", 0),
+                Map.entry("第二个", 1), Map.entry("第二", 1), Map.entry("2", 1),
+                Map.entry("第三个", 2), Map.entry("第三", 2), Map.entry("3", 2),
+                Map.entry("第四个", 3), Map.entry("第四", 3), Map.entry("4", 3),
+                Map.entry("第五个", 4), Map.entry("第五", 4), Map.entry("5", 4));
+        Integer alias = aliases.get(normalized);
+        if (alias != null) return alias;
+        String key = canonicalOptionReference(value);
+        return key.length() == 1 && key.charAt(0) >= 'a' && key.charAt(0) <= 'e'
+                ? key.charAt(0) - 'a' : null;
     }
 
     private void parseDuration(TravelPlanDraft draft, String duration) {

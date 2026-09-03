@@ -121,6 +121,7 @@ public class WebChatStreamService {
         private final List<String> skills = new ArrayList<>();
         private int toolSequence;
         private long lastCheckpointAt;
+        private int lastCheckpointLength;
 
         private StreamSink(SseEmitter emitter, String userId, String runId) {
             this.emitter = emitter;
@@ -153,12 +154,24 @@ public class WebChatStreamService {
                         "durationMs", event.durationMs() == null ? 0L : event.durationMs()));
                     checkpoint(true);
                 }
-                case TOOL_FAILED, TOOL_BLOCKED -> {
+                case TOOL_FAILED -> {
                     finishTool(event, false);
                     send(Map.of("type", "tool_end",
                         "name", safe(event.toolName()), "skill", safe(event.skillName()), "ok", false,
                         "durationMs", event.durationMs() == null ? 0L : event.durationMs(),
                         "detail", safe(event.summary())));
+                    checkpoint(true);
+                }
+                case TOOL_BLOCKED -> {
+                    // A blocked call has no TOOL_STARTED event. Materialize a complete trace row
+                    // so the UI does not silently lose retries and policy blocks.
+                    tools.add(new ToolTraceItem("t" + (++toolSequence), safe(event.toolName()),
+                            safe(event.skillName()), "err", 0L, safe(event.summary())));
+                    send(Map.of("type", "tool_start", "name", safe(event.toolName()),
+                            "skill", safe(event.skillName())));
+                    send(Map.of("type", "tool_end",
+                            "name", safe(event.toolName()), "skill", safe(event.skillName()), "ok", false,
+                            "durationMs", 0L, "detail", safe(event.summary())));
                     checkpoint(true);
                 }
                 default -> { }
@@ -186,8 +199,10 @@ public class WebChatStreamService {
 
         private void checkpoint(boolean force) {
             long now = System.currentTimeMillis();
-            if (!force && now - lastCheckpointAt < 250 && content.length() % 256 != 0) return;
+            int pendingChars = content.length() - lastCheckpointLength;
+            if (!force && now - lastCheckpointAt < 1000 && pendingChars < 1024) return;
             lastCheckpointAt = now;
+            lastCheckpointLength = content.length();
             try {
                 transcriptService.checkpoint(userId, runId, content.toString(),
                         List.copyOf(tools), List.copyOf(skills));

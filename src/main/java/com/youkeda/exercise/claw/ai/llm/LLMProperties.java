@@ -38,6 +38,12 @@ public class LLMProperties {
      */
     private int streamIdleTimeoutSeconds = 30;
 
+    /**
+     * 是否禁用流式调用。当底层模型流式输出不稳定时（如返回空正文），
+     * 设置为 true 可跳过流式直接走全量调用，避免重复推送。
+     */
+    private boolean streamDisabled = false;
+
     public String getApiKey() {
         return apiKey;
     }
@@ -68,5 +74,13 @@ public class LLMProperties {
 
     public void setStreamIdleTimeoutSeconds(int streamIdleTimeoutSeconds) {
         this.streamIdleTimeoutSeconds = streamIdleTimeoutSeconds;
+    }
+
+    public boolean isStreamDisabled() {
+        return streamDisabled;
+    }
+
+    public void setStreamDisabled(boolean streamDisabled) {
+        this.streamDisabled = streamDisabled;
     }
 }

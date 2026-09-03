@@ -374,11 +374,24 @@ public class LLMClient {
                                               List<ToolDefinition> tools,
                                               Consumer<String> contentSink) {
         Consumer<String> sink = contentSink != null ? contentSink : ignored -> { };
+        if (properties.isStreamDisabled()) {
+            log.info("流式调用已禁用，直接走全量调用");
+            return chatWithTools(systemPrompt, messages, tools);
+        }
         try {
             String requestBody = buildRequestBodyWithTools(systemPrompt, messages, tools, true);
             log.info("LLM 流式调用 | messages={} | tools={}",
                     messages.size(), tools != null ? tools.size() : 0);
-            return doChatWithToolsStreaming(requestBody, sink);
+            LLMResponse streamed = doChatWithToolsStreaming(requestBody, sink);
+            if (streamed != null
+                    && (streamed.getContent() == null || streamed.getContent().isBlank())
+                    && !streamed.isToolCall()) {
+                log.warn("LLM 流式返回无正文内容，降级为全量调用 | reasoningLength={}",
+                        streamed.getReasoningContent() != null
+                                ? streamed.getReasoningContent().length() : 0);
+                return chatWithTools(systemPrompt, messages, tools);
+            }
+            return streamed;
         } catch (Exception e) {
             recordFailure(e);
             if (hasPermanentFailure()) {
@@ -421,6 +434,7 @@ public class LLMClient {
         checkHttpStatus(response.statusCode());
 
         StringBuilder content = new StringBuilder();
+        StringBuilder reasoningContent = new StringBuilder();
         String finishReason = null;
         // index → 分片累积器（tool_calls 增量跨 chunk 拼接）
         Map<Integer, StreamToolCallAccumulator> toolCallAccumulators = new LinkedHashMap<>();
@@ -477,6 +491,12 @@ public class LLMClient {
                         }
                     }
                 }
+                // 推理模型会把思考过程放在独立字段中。它不应推送给用户，
+                // 但需要保留给后续工具轮次，并用于诊断“只有思考、没有正文”的响应。
+                if (delta.has("reasoning_content")
+                        && !delta.get("reasoning_content").isNull()) {
+                    reasoningContent.append(delta.get("reasoning_content").asText());
+                }
                 JsonNode toolCalls = delta.get("tool_calls");
                 if (toolCalls != null && toolCalls.isArray()) {
                     mergeStreamToolCalls(toolCalls, toolCallAccumulators);
@@ -486,7 +506,8 @@ public class LLMClient {
             throw new RuntimeException("流式读取中断: " + e.getMessage(), e);
         }
 
-        return buildStreamedResponse(content, toolCallAccumulators, finishReason);
+        return buildStreamedResponse(
+                content, reasoningContent, toolCallAccumulators, finishReason);
     }
 
     /**
@@ -617,6 +638,7 @@ public class LLMClient {
     /** 将流式累积结果重建为与全量调用一致的 {@link LLMResponse}。 */
     private LLMResponse buildStreamedResponse(
             StringBuilder content,
+            StringBuilder reasoningContent,
             Map<Integer, StreamToolCallAccumulator> accumulators,
             String streamFinishReason) {
         List<LLMResponse.ToolCall> toolCalls = new ArrayList<>();
@@ -649,10 +671,17 @@ public class LLMClient {
             }
         }
 
-        log.debug("流式响应完成 | contentLength={} | toolCalls={} | finishReason={}",
+        int reasoningLength = reasoningContent.length();
+        if (toolCalls.isEmpty() && (replyContent == null || replyContent.isBlank())) {
+            log.warn("LLM 流式响应正文为空 | finishReason={} | reasoningLength={}",
+                    finishReason, reasoningLength);
+        }
+        log.debug("流式响应完成 | contentLength={} | reasoningLength={} | toolCalls={}"
+                        + " | finishReason={}",
                 replyContent != null ? replyContent.length() : 0,
-                toolCalls.size(), finishReason);
-        return new LLMResponse(replyContent, toolCalls, finishReason, null);
+                reasoningLength, toolCalls.size(), finishReason);
+        return new LLMResponse(replyContent, toolCalls, finishReason,
+                reasoningLength > 0 ? reasoningContent.toString() : null);
     }
 
     /**
@@ -770,6 +799,11 @@ public class LLMClient {
                 }
                 finishReason = "stop";
             }
+        }
+
+        if (toolCalls.isEmpty() && (content == null || content.isBlank())) {
+            log.warn("LLM 结构化响应正文为空 | finishReason={} | reasoningLength={}",
+                    finishReason, reasoningContent != null ? reasoningContent.length() : 0);
         }
 
         return new LLMResponse(content, toolCalls, finishReason, reasoningContent);

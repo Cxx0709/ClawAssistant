@@ -62,6 +62,10 @@ public class TravelSaveOptionsTool extends AbstractTool {
     public String execute(String argumentsJson, ToolExecutionContext context) {
         try {
             ObjectNode args = (ObjectNode) objectMapper.readTree(argumentsJson);
+            // TravelPlanService is intentionally action-driven. Without this discriminator the
+            // request falls through to collect(), which makes a save look successful while no
+            // options are persisted.
+            args.put("action", "save_options");
             return objectMapper.writeValueAsString(planService.handle(args));
         } catch (Exception e) {
             log.error("travel_save_options 执行失败 | error={}", e.getMessage());

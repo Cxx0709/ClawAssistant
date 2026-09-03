@@ -73,7 +73,8 @@ class ToolExecutionReliabilityTest {
 
         // 活动记录应标记为失败
         verify(activityRecorder).toolFinished(
-                eq("req-1"), eq("common"), eq("unstable_tool"), eq(false), anyLong());
+                eq("req-1"), eq("common"), eq("unstable_tool"), eq(false), anyLong(),
+                contains("网络超时"));
     }
 
     // ==================== 2. Tool 返回 null 是合法的（工具自行处理） ====================

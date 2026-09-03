@@ -1,5 +1,6 @@
 package com.youkeda.exercise.claw.agent.runtime;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 
@@ -135,6 +136,7 @@ public class ExecutionLoop {
         Set<String> executedCalls = new HashSet<>();
         Map<String, ResultStatus> toolStatuses = new HashMap<>();
         boolean forceTextResponse = false;
+        int blankTextResponses = 0;
         PlanState planState = initialPlanState;
         int totalToolCalls = 0;
 
@@ -156,6 +158,12 @@ public class ExecutionLoop {
 
             // 工具调用返回 null 时的单轮降级
             if (response == null) {
+                String structuredFallback = structuredToolFallback(messages);
+                if (structuredFallback != null) {
+                    log.warn("LLM 调用失败，使用最近一次工具的结构化追问结果完成回复");
+                    return Result.textReply(
+                            structuredFallback, messages, planState, session);
+                }
                 if (llmClient.hasPermanentFailure()) {
                     log.warn("LLM 调用为不可重试错误，结束循环 | reason={}",
                             llmClient.getLastFailureSummary());
@@ -218,6 +226,28 @@ public class ExecutionLoop {
             // === 分支 2：直接回复文本 ===
             if (!response.isToolCall()) {
                 String reply = response.getContent();
+
+                if (reply == null || reply.isBlank()) {
+                    String structuredFallback = structuredToolFallback(messages);
+                    if (structuredFallback != null) {
+                        log.warn("LLM 返回空正文，使用最近一次工具的结构化追问结果完成回复"
+                                + " | finishReason={}", response.getFinishReason());
+                        return Result.textReply(
+                                structuredFallback, messages, planState, session);
+                    }
+                    if (blankTextResponses++ == 0) {
+                        log.warn("LLM 返回空正文，强制无工具重试一次 | finishReason={}",
+                                response.getFinishReason());
+                        messages.add(new Message("system",
+                                "上一次响应正文为空。请直接给用户一个完整、非空的文本回复，"
+                                        + "不要调用工具，也不要只输出思考过程。"));
+                        forceTextResponse = true;
+                        continue;
+                    }
+                    log.warn("LLM 连续返回空正文，结束循环 | finishReason={}",
+                            response.getFinishReason());
+                    return Result.llmFailed(messages, planState, session);
+                }
 
                 // Skill 回复守卫（注册表，业务方注入）：命中则注入 correction 提示重试
                 SkillReplyGuard.GuardResult guardResult = replyGuardRegistry.validate(
@@ -285,6 +315,46 @@ public class ExecutionLoop {
         // 达到局部上限
         log.warn("工具调用循环达到上限 {} 轮", maxRounds);
         return Result.maxRounds(messages, planState, session);
+    }
+
+    /**
+     * 当工具已经给出可直接展示的补充问题、但后续 LLM 为空或失败时，生成确定性降级回复。
+     * 只检查当前用户消息之后的工具结果，避免误用历史轮次中的旧问题。
+     */
+    private String structuredToolFallback(List<Message> messages) {
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Message message = messages.get(i);
+            if (message.role() == MessageRole.USER) {
+                break;
+            }
+            if (message.role() != MessageRole.TOOL
+                    || message.content() == null || message.content().isBlank()) {
+                continue;
+            }
+            try {
+                JsonNode result = objectMapper.readTree(message.content());
+                if (!"NEED_MORE_INFORMATION".equalsIgnoreCase(
+                        result.path("status").asText())) {
+                    continue;
+                }
+                JsonNode questions = result.path("questions");
+                if (!questions.isArray() || questions.isEmpty()) {
+                    continue;
+                }
+                StringBuilder reply = new StringBuilder("为了继续规划，我还需要确认：");
+                int count = Math.min(2, questions.size());
+                for (int q = 0; q < count; q++) {
+                    String question = questions.get(q).asText("").trim();
+                    if (!question.isEmpty()) {
+                        reply.append('\n').append(q + 1).append(". ").append(question);
+                    }
+                }
+                return reply.indexOf("\n") >= 0 ? reply.toString() : null;
+            } catch (Exception e) {
+                log.debug("忽略无法解析的结构化工具降级结果 | error={}", e.getMessage());
+            }
+        }
+        return null;
     }
 
     /**

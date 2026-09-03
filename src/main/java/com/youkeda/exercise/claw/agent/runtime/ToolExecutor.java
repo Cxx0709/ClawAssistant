@@ -1,6 +1,9 @@
 package com.youkeda.exercise.claw.agent.runtime;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import com.youkeda.exercise.claw.agent.SafetyPolicy;
 import com.youkeda.exercise.claw.agent.ToolResultStatusParser;
@@ -103,7 +106,7 @@ public class ToolExecutor {
             Tool fn = toolRegistry.find(toolName);
             String result;
             ResultStatus resultStatus;
-            String callSignature = toolName + "|" + tc.arguments();
+            String callSignature = canonicalCallSignature(toolName, tc.arguments());
 
             // Phase 1: 安全检查（CanExecute）
             String blockedReason = safetyPolicy.canExecute(toolName, tc.arguments());
@@ -171,7 +174,8 @@ public class ToolExecutor {
                             || resultStatus == ResultStatus.PARTIAL;
                     activityRecorder.toolFinished(
                             activityRequestId, activeSkillName, toolName, succeeded,
-                            System.currentTimeMillis() - toolStartedAt);
+                            System.currentTimeMillis() - toolStartedAt,
+                            succeeded ? null : resultSummary(result));
                 } catch (Exception e) {
                     // 消费化异常：不允许工具异常直接穿透 Agent Loop，
                     // 转换为标准 ERROR ToolResult 使 LLM 下一轮可见并自行恢复。
@@ -182,7 +186,8 @@ public class ToolExecutor {
                     toolStatuses.put(toolName, resultStatus);
                     activityRecorder.toolFinished(
                             activityRequestId, activeSkillName, toolName, false,
-                            System.currentTimeMillis() - toolStartedAt);
+                            System.currentTimeMillis() - toolStartedAt,
+                            e.getMessage());
                 }
                 log.info("工具执行完成 | name={} | result={}", toolName, truncate(result, 200));
 
@@ -257,6 +262,48 @@ public class ToolExecutor {
         } catch (Exception e) {
             return "{\"status\":\"BLOCKED\"}";
         }
+    }
+
+    private String canonicalCallSignature(String toolName, String arguments) {
+        try {
+            JsonNode parsed = objectMapper.readTree(arguments);
+            return toolName + "|" + objectMapper.writeValueAsString(canonicalize(parsed));
+        } catch (Exception ignored) {
+            return toolName + "|" + arguments;
+        }
+    }
+
+    private JsonNode canonicalize(JsonNode node) {
+        if (node == null || node.isNull()) return objectMapper.nullNode();
+        if (node.isObject()) {
+            ObjectNode sorted = objectMapper.createObjectNode();
+            List<String> names = new ArrayList<>();
+            node.fieldNames().forEachRemaining(names::add);
+            names.sort(String::compareTo);
+            names.forEach(name -> sorted.set(name, canonicalize(node.get(name))));
+            return sorted;
+        }
+        if (node.isArray()) {
+            ArrayNode array = objectMapper.createArrayNode();
+            node.forEach(value -> array.add(canonicalize(value)));
+            return array;
+        }
+        return node;
+    }
+
+    private String resultSummary(String result) {
+        try {
+            JsonNode node = objectMapper.readTree(result);
+            for (String field : List.of("error", "message", "reason")) {
+                String value = node.path(field).asText("");
+                if (!value.isBlank()) return value;
+            }
+            JsonNode warnings = node.path("warnings");
+            if (warnings.isArray() && !warnings.isEmpty()) return warnings.get(0).asText();
+        } catch (Exception ignored) {
+            // Fall back to a compact raw result below.
+        }
+        return truncate(result, 120);
     }
 
     /**

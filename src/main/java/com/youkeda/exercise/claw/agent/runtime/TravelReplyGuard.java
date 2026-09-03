@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
  *
  * <p>只做「交付质量」确定性校验，不强制流程：
  * <ul>
- *   <li>声称完成行程，但 travel_collect 本轮未调用或未收集齐（FAILED=NEED_MORE_INFORMATION）→ 拦截</li>
+ *   <li>声称完成行程，但 travel_collect 本轮未调用或未收集齐（PARTIAL=NEED_MORE_INFORMATION）→ 拦截</li>
  *   <li>回复含预算结论（总费用/人均/预算内/超预算），但本轮未调 travel_calculate_cost → 拦截</li>
  * </ul>
  *
@@ -23,7 +23,7 @@ import java.util.regex.Pattern;
 public class TravelReplyGuard implements SkillReplyGuard {
 
     private static final Pattern COMPLETED_PLAN = Pattern.compile(
-            "行程总览|行程安排|行程已生成|规划好了|方案如下|Day\\s*1|第一天");
+            "行程总览|行程安排|行程已生成|规划好了|已为你规划好|完整行程|Day\\s*1|第一天");
 
     private static final Pattern BUDGET_SUMMARY = Pattern.compile(
             "总费用|总价|人均费用|人均价|预算内|超预算|合计.*元|共.*元");
@@ -39,7 +39,7 @@ public class TravelReplyGuard implements SkillReplyGuard {
             return GuardResult.allow();
         }
         Map<String, ResultStatus> statuses = context.toolStatuses();
-        boolean collected = statuses.get("travel_collect") == ResultStatus.SUCCESS;
+        boolean collected = statuses.getOrDefault("travel_collect", ResultStatus.FAILED) == ResultStatus.SUCCESS;
 
         // 不变量 1：旅行请求 + 声称完成行程 + travel_collect 未收集齐 → 拦截
         boolean claimsCompleted = COMPLETED_PLAN.matcher(context.reply()).find();
@@ -51,8 +51,10 @@ public class TravelReplyGuard implements SkillReplyGuard {
         }
 
         // 不变量 2：预算结论必须本轮有 travel_calculate_cost 计算凭据
-        boolean costCalculated =
-                statuses.get("travel_calculate_cost") == ResultStatus.SUCCESS;
+        ResultStatus costStatus = statuses.getOrDefault(
+                "travel_calculate_cost", ResultStatus.FAILED);
+        boolean costCalculated = costStatus == ResultStatus.SUCCESS
+                || costStatus == ResultStatus.PARTIAL;
         if (BUDGET_SUMMARY.matcher(context.reply()).find() && !costCalculated) {
             return GuardResult.reject(
                     "你的回复包含总费用/人均费用/预算结论，但本轮尚未调用 travel_calculate_cost。"

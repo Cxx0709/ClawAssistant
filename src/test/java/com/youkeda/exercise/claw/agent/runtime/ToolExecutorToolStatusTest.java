@@ -141,6 +141,34 @@ class ToolExecutorToolStatusTest {
     }
 
     @Test
+    void blocksSemanticallyDuplicateJsonWithDifferentFieldOrder() {
+        ObjectMapper om = new ObjectMapper();
+        ToolRegistry registry = new ToolRegistry();
+        StubTool ok = new StubTool("weather_query", "{\"status\":\"SUCCESS\"}", registry, om);
+        registry.register(ok);
+
+        SafetyPolicy allowAll = mock(SafetyPolicy.class);
+        when(allowAll.canExecute(any(), any())).thenReturn(null);
+        ToolExecutor executor = new ToolExecutor(
+                registry, allowAll, mock(SkillPendingCoordinator.class),
+                mock(PendingToolCoordinator.class), mock(AgentActivityRecorder.class),
+                new ToolResultStatusParser(om), mock(PlanStore.class), om);
+        Set<String> executedCalls = new HashSet<>();
+
+        ToolExecutor.ToolExecutionBatch first = executor.executeToolCalls(
+                List.of(new LLMResponse.ToolCall("c1", "weather_query", "{\"city\":\"杭州\",\"days\":2}")),
+                mock(ToolExecutionContext.class), SkillSession.create("u"), null,
+                "req", "common", "查天气", executedCalls);
+        ToolExecutor.ToolExecutionBatch second = executor.executeToolCalls(
+                List.of(new LLMResponse.ToolCall("c2", "weather_query", "{\"days\":2,\"city\":\"杭州\"}")),
+                mock(ToolExecutionContext.class), SkillSession.create("u"), null,
+                "req", "common", "查天气", executedCalls);
+
+        assertEquals(ResultStatus.SUCCESS, first.toolStatuses().get("weather_query"));
+        assertEquals(ResultStatus.BLOCKED, second.toolStatuses().get("weather_query"));
+    }
+
+    @Test
     void recordsFailedForUnknownTool() {
         ObjectMapper om = new ObjectMapper();
         ToolRegistry registry = new ToolRegistry();

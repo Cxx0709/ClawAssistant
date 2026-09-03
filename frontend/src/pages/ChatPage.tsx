@@ -60,6 +60,9 @@ export default function ChatPage({ onHome, user, onLogout }: {
   const toolKeyRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickRef = useRef(true);
+  const scrollFrameRef = useRef<number | null>(null);
+  const textBufferRef = useRef('');
+  const textFlushTimerRef = useRef<number | null>(null);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     const el = scrollRef.current;
@@ -213,13 +216,60 @@ export default function ChatPage({ onHome, user, onLogout }: {
     ? `${messages.length}-${last.role}-${last.content.length}-${last.tools?.length ?? 0}-${!!last.streaming}-${!!last.errorText}`
     : 'idle';
   useEffect(() => {
-    if (stickRef.current) scrollToBottom('smooth');
+    if (!stickRef.current) return;
+    if (scrollFrameRef.current != null) {
+      window.cancelAnimationFrame(scrollFrameRef.current);
+    }
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      // Repeated smooth-scroll animations fight each other while tokens arrive.
+      scrollToBottom(last?.streaming ? 'auto' : 'smooth');
+    });
+    return () => {
+      if (scrollFrameRef.current != null) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
+    };
   }, [watchKey, scrollToBottom]);
 
   const patchStream = useCallback((patch: (m: ChatMsg) => ChatMsg) => {
     const id = streamIdRef.current;
     if (!id) return;
     setMessages((prev) => prev.map((m) => (m.id === id ? patch(m) : m)));
+  }, []);
+
+  const flushTextBuffer = useCallback(() => {
+    textFlushTimerRef.current = null;
+    const buffered = textBufferRef.current;
+    textBufferRef.current = '';
+    if (buffered) {
+      patchStream((m) => ({ ...m, content: m.content + buffered }));
+    }
+  }, [patchStream]);
+
+  const queueText = useCallback((content: string) => {
+    textBufferRef.current += content;
+    if (textFlushTimerRef.current == null) {
+      // 25 UI updates/sec is visually smooth and avoids reparsing all Markdown per token.
+      textFlushTimerRef.current = window.setTimeout(flushTextBuffer, 40);
+    }
+  }, [flushTextBuffer]);
+
+  const takeBufferedText = useCallback(() => {
+    if (textFlushTimerRef.current != null) {
+      window.clearTimeout(textFlushTimerRef.current);
+      textFlushTimerRef.current = null;
+    }
+    const buffered = textBufferRef.current;
+    textBufferRef.current = '';
+    return buffered;
+  }, []);
+
+  useEffect(() => () => {
+    if (textFlushTimerRef.current != null) {
+      window.clearTimeout(textFlushTimerRef.current);
+    }
   }, []);
 
   const toggleTrace = useCallback((id: string) => {
@@ -388,13 +438,14 @@ export default function ChatPage({ onHome, user, onLogout }: {
           });
           break;
         case 'text':
-          patchStream((m) => ({ ...m, content: m.content + evt.content }));
+          queueText(evt.content);
           break;
-        case 'done':
+        case 'done': {
+          const buffered = takeBufferedText();
           // done 携带全文，以它为最终兜底（流式丢字也不漏）
           patchStream((m) => ({
             ...m,
-            content: evt.reply || m.content,
+            content: evt.reply || m.content + buffered,
             totalMs: Date.now() - startedAt,
             streaming: false,
             status: 'COMPLETED',
@@ -403,18 +454,22 @@ export default function ChatPage({ onHome, user, onLogout }: {
           refreshRail();
           void reloadConversations();
           break;
-        case 'error':
+        }
+        case 'error': {
+          const buffered = takeBufferedText();
           patchStream((m) => ({
             ...m,
+            content: m.content + buffered,
             errorText: evt.message || '处理失败，请稍后再试',
             streaming: false,
             status: 'FAILED',
           }));
           refreshRail();
           break;
+        }
       }
     },
-    [patchStream, refreshRail, reloadConversations],
+    [patchStream, queueText, refreshRail, reloadConversations, takeBufferedText],
   );
 
   const send = useCallback(
@@ -430,6 +485,8 @@ export default function ChatPage({ onHome, user, onLogout }: {
       const uid = `u${seqRef.current}`;
       const aid = `a${seqRef.current}`;
       const startedAt = Date.now();
+
+      takeBufferedText();
 
       setMessages((prev) => [
         ...prev,
@@ -466,7 +523,7 @@ export default function ChatPage({ onHome, user, onLogout }: {
           streamIdRef.current = null;
         });
     },
-    [attachments, busy, conversationId, handleEvent, historyLoading, patchStream, refreshRail, uploading],
+    [attachments, busy, conversationId, handleEvent, historyLoading, patchStream, refreshRail, takeBufferedText, uploading],
   );
 
   const uploadFiles = useCallback(async (files: FileList | null) => {
