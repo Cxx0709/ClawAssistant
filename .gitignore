@@ -1,0 +1,104 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+HELP.md
+.kotlin
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+.idea/modules.xml
+.idea/jarRepositories.xml
+.idea/compiler.xml
+.idea/libraries/
+*.iws
+*.iml
+*.ipr
+
+### Eclipse ###
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+### Mac OS ###
+.DS_Store
+
+# 忽略项目参考文档（仅供 AI 参考，不应提交）
+CLAUDE-PROJECT-REFERENCE.md
+项目包结构整理方案.md
+
+# 忽略核心配置文件
+src/main/resources/application.properties
+
+# 忽略编译后的字节码及反编译产物（防止 .class 文件被误提交）
+*.class
+com/lth/
+
+# 忽略Claude的项目文档
+CLAUDE.md
+AGENTS.md
+/memory/
+!src/main/java/com/youkeda/exercise/claw/agent/memory/
+!src/main/java/com/youkeda/exercise/claw/agent/memory/**
+!src/test/java/com/youkeda/exercise/claw/agent/memory/
+!src/test/java/com/youkeda/exercise/claw/agent/memory/**
+
+# 忽略 SQLite 数据库文件
+data/
+
+# 忽略设计文档（仅供 AI 参考，不应提交）
+docs/
+designs/
+
+# 忽略 Qdrant gRPC 生成代码（已有 Maven 依赖，不需要源码）
+io/
+grpc/
+META-INF/
+
+# 单实例进程锁文件（运行时生成，不应提交）
+.clawassistant.lock
+
+# SQLite 数据库文件
+data/
+*.sqlite
+.claude/
+.agents/
+.hermes/
+
+# Frontend dependencies and generated assets
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Local environment and secret overrides
+.env
+.env.*
+!.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+src/main/resources/application-local.properties
+
+# Runtime output
+*.log
+logs/
+*.db

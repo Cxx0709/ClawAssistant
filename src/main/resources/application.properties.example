@@ -1,0 +1,240 @@
+# ============================================
+# Claw Assistant Configuration
+# ============================================
+
+# Skill definitions and deterministic trigger policies
+spring.config.import=classpath:config/skills.yml,classpath:config/skill-triggers.yml
+
+# Weather API Configuration
+
+
+# --- WeatherAPI.com (https://www.weatherapi.com) ---
+weather.api.url=https://api.weatherapi.com/v1/current.json?key={key}&q={city}&lang=zh
+weather.api.key=
+
+# ============================================
+# Web Search API Configuration — Tavily (https://tavily.com)
+# ============================================
+# Tavily 专为 AI Agent 设计：返回结构化结果 + AI 摘要 + 来源引用
+# 注册获取 API Key: https://app.tavily.com
+websearch.api.key=
+websearch.api.url=https://api.tavily.com/search
+# 搜索深度: basic(快速) / advanced(深入)
+websearch.api.search-depth=basic
+# AI 摘要: basic(简短) / advanced(详细)
+websearch.api.include-answer=basic
+websearch.api.max-results=5
+websearch.api.timeout=15
+
+# Legacy owner data is read once when the first Web administrator is created.
+# Remove this property after the old account has been claimed and backed up.
+legacy.owner-db-path=./data/claw-bot.db
+
+# Generated and uploaded Web artifacts
+artifact.storage-path=./data/artifacts
+spring.servlet.multipart.max-file-size=25MB
+spring.servlet.multipart.max-request-size=100MB
+server.servlet.session.cookie.http-only=true
+server.servlet.session.cookie.same-site=lax
+
+# ============================================
+# LLM Configuration
+# ============================================
+llm.api-key=${DASHSCOPE_API_KEY:${vision.api-key:}}
+llm.base-url=https://dashscope.aliyuncs.com/compatible-mode/v1
+llm.model=qwen3.6-plus
+
+# ============================================
+# Vision Model Configuration
+# ============================================
+vision.api-key=
+vision.base-url=https://dashscope.aliyuncs.com/compatible-mode/v1
+vision.model=qwen-vl-max
+
+# ============================================
+# Image Generation Configuration
+# ============================================
+image.api-key=
+image.model=qwen-image-2.0
+image.base-url=https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
+
+# ============================================
+# Voice (ASR + TTS) Configuration
+# ============================================
+voice.api-key=
+voice.asr-base-url=https://dashscope.aliyuncs.com/api/v1/services/audio/transcription/transcription
+voice.asr-model=paraformer-v2
+voice.tts-base-url=https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer
+voice.tts-model=cosyvoice-v2
+voice.tts-voice=longxiaochun_v2
+
+# ============================================
+# File Parse Configuration
+# ============================================
+file.parse.max-file-size=10485760
+file.parse.max-text-length=30000
+file.parse.max-embedded-images=5
+file.parse.max-analyzed-embedded-images=3
+
+# ============================================
+# Tencent Map Configuration
+# ============================================
+# 腾讯位置服务（lbs.qq.com）API 密钥
+tencent.key=
+
+# ============================================
+# Context Memory Configuration
+# ============================================
+# 上下文存储类型：in-memory（重启丢失）| sqlite（文件持久化）
+# memory.type=sqlite
+# sqlite.path=./data/claw-memory.db
+# sqlite.max-messages=50
+
+place-image.provider=pexels
+
+# ============================================
+# Pexels API Configuration
+# ============================================
+# Pexels åè´¹ API Key æ³¨åå°å: https://www.pexels.com/api/
+pexels.api-key=
+
+# ============================================
+# SQLite DataSource (Spring JDBC + SqliteContextStore)
+# ============================================
+spring.datasource.url=jdbc:sqlite:data/claw.db
+spring.datasource.driver-class-name=org.sqlite.JDBC
+
+# ============================================
+# Campus Exam Reminder（考试提醒）
+# ============================================
+campus.enabled=true
+
+storage.enabled=true
+
+# ============================================
+# Long-Term Memory (Qdrant + BGE-M3)
+# ============================================
+# 总开关
+memory.enabled=true
+# 记忆重要性阈值：低于此值不入库（0.0~1.0）
+memory.importance-threshold=0.3
+# 每次召回的记忆条数（Top-K）
+memory.recall-top-k=5
+# 召回最低相似度：低于此值的记忆不注入
+memory.recall-min-score=0.45
+# 先多召回候选，再综合相关度、重要性和时间排序
+memory.recall-candidate-multiplier=3
+# 普通记忆的新鲜度半衰期（天）
+memory.recency-half-life-days=180
+# 单用户记忆提取线程池
+memory.async-core-size=1
+memory.async-max-size=2
+memory.async-queue-capacity=50
+# 去重相似度阈值：高于此值视为重复
+memory.dedup-similarity=0.90
+# 用户消息最短长度：低于此值跳过提取
+memory.min-extract-length=10
+
+# Qdrant 向量数据库
+memory.qdrant.host=localhost
+memory.qdrant.port=6334
+memory.qdrant.collection=claw_memories
+memory.qdrant.vector-dimension=1024
+memory.qdrant.operation-timeout=1s
+
+# Embedding 模型（BGE-M3，需 OpenAI 兼容的 /v1/embeddings 端点）
+memory.embedding.base-url=http://localhost:11434
+memory.embedding.api-key=
+memory.embedding.model=bge-m3
+memory.embedding.dimension=1024
+memory.embedding.request-timeout=30s
+memory.embedding.circuit.failure-threshold=3
+memory.embedding.circuit.open-duration=30s
+
+# Skill RAG（知识内容和索引元数据不得包含凭据）
+skill.knowledge.collection=skill_knowledge
+skill.knowledge.operation-timeout=10s
+skill.knowledge.recall-top-k=5
+skill.knowledge.recall-candidate-multiplier=3
+skill.knowledge.min-score=0.50
+skill.knowledge.max-context-chars=12000
+skill.knowledge.management.enabled=false
+# Comma-separated authenticated user IDs allowed to manage knowledge. Empty denies everyone.
+skill.knowledge.management.allowed-users=
+skill.knowledge.management.max-import-chars=200000
+skill.knowledge.management.max-chunks=500
+skill.knowledge.management.max-source-chars=512
+skill.knowledge.management.max-version-chars=64
+
+# ============================================
+# Didi MCP Configuration
+# ============================================
+# 滴滴出行 MCP Server（JSON-RPC 2.0 协议）
+# 注册获取 API Key: https://mcp.didichuxing.com
+# 沙箱环境返回 Mock 数据，不影响真实账户
+didi.mcp.base-url=https://mcp.didichuxing.com/mcp-servers-sandbox
+didi.mcp.api-key=
+didi.mcp.timeout=15000
+
+# ============================================
+# Information Scout Agent（信息猎手）
+# ============================================
+# 总开关
+scout.enabled=true
+# 语义匹配最低分数（0.0-1.0）
+scout.min-match-score=0.45
+# 严格阈值无结果时，候选仍需达到该分数
+scout.fallback-match-score=0.30
+# 兜底候选最多保留几条
+scout.fallback-candidate-count=3
+# 只推荐最近多少天内发布的信息
+scout.freshness-days=14
+# 每次最大候选信息数
+scout.max-candidates=20
+# 每次最大推荐数
+scout.max-recommendations=10
+# 不强制补足推荐，允许本轮没有值得推送的结果
+scout.min-recommendations=0
+# 信息保留天数
+scout.ttl-days=7
+# 搜索任务数
+scout.search-task-count=5
+# 每个搜索任务最大结果数
+scout.max-results-per-task=10
+# 定时任务 cron 表达式（每天早8点）
+scout.cron=0 0 8 * * *
+
+# Qdrant 信息库（独立于记忆库）
+scout.qdrant.collection=scout_information
+scout.qdrant.vector-dimension=1024
+
+# RSS 订阅源（Phase 2）
+scout.rss.enabled=true
+scout.rss.freshness-days=7
+# 国内科技与商业资讯
+scout.rss.feeds[0]=https://www.ithome.com/rss/
+scout.rss.feeds[1]=https://36kr.com/feed
+scout.rss.feeds[2]=https://www.oschina.net/news/rss
+scout.rss.feeds[3]=https://sspai.com/feed
+# 国内编程与工程实践资讯
+scout.rss.feeds[4]=https://tech.meituan.com/feed/
+scout.rss.feeds[5]=https://www.ruanyifeng.com/blog/atom.xml
+scout.rss.feeds[6]=https://hellogithub.com/rss
+scout.rss.feeds[7]=https://www.solidot.org/index.rss
+# 海外科技资讯
+scout.rss.feeds[8]=https://openai.com/news/rss.xml
+scout.rss.feeds[9]=https://spring.io/blog.atom
+scout.rss.feeds[10]=https://github.blog/feed/
+scout.rss.feeds[11]=https://hnrss.org/frontpage
+
+# ============================================
+# Anime Notification（动漫通知）
+# ============================================
+anime.enabled=true
+anime.seasonRecommendation.enabled=true
+
+# ============================================
+# Agent Runtime（Agent 执行）
+# ============================================
+# 工具调用循环最大轮次（默认 15）
+agent.max-rounds=15
