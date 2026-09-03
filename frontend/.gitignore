@@ -1,3 +1,0 @@
-node_modules/
-dist/
-# 构建产物直接输出到 Spring resources/static，不在 frontend 内保留
