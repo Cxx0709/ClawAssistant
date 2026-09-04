@@ -20,6 +20,9 @@ class SkillRouterPendingActionTest {
         SkillSessionStore store = mock(SkillSessionStore.class);
         TriggerPolicyFactory policyFactory = mock(TriggerPolicyFactory.class);
         SkillLlmRouter llmRouter = mock(SkillLlmRouter.class);
+        when(llmRouter.route(anyString(), anyString(), any(), any(), anyList()))
+                .thenReturn(SkillRoutingResult.of("information-scout", java.util.Set.of(),
+                        SkillRoutingResult.SkillRoutingAction.CONTINUE, 0.95, "pending topic answer"));
         TriggerProperties triggerProperties = mock(TriggerProperties.class);
         SkillSession session = SkillSession.create("owner")
                 .withActiveSkill("information-scout")
@@ -33,7 +36,7 @@ class SkillRouterPendingActionTest {
         assertEquals("information-scout", result.primarySkill());
         assertEquals(SkillRoutingResult.SkillRoutingAction.CONTINUE, result.action());
         assertEquals(0.95, result.confidence());
-        verifyNoInteractions(llmRouter);
+        verify(llmRouter).route(eq("AI / 深度学习"), eq("owner"), eq(registry), eq(Optional.of(session)), anyList());
     }
 
     @Test
@@ -64,7 +67,7 @@ class SkillRouterPendingActionTest {
         SkillSessionStore store = mock(SkillSessionStore.class);
         SkillSession session = SkillSession.create("owner")
                 .withActiveSkill("transport")
-                .withPendingAction(SkillPendingCoordinator.RIDE_ESTIMATE_CONFIRM, null);
+                .withPendingAction("RIDE_ESTIMATE_CONFIRM", null);
         when(store.find("owner")).thenReturn(Optional.of(session));
 
         TriggerPolicyFactory policyFactory = mock(TriggerPolicyFactory.class);
@@ -106,8 +109,12 @@ class SkillRouterPendingActionTest {
         TriggerProperties triggers = mock(TriggerProperties.class);
         when(triggers.getTriggers()).thenReturn(Map.of("weather", List.of("天气")));
 
+        SkillLlmRouter semanticRouter = mock(SkillLlmRouter.class);
+        when(semanticRouter.route(anyString(), anyString(), any(), any(), anyList()))
+                .thenReturn(SkillRoutingResult.of("information-scout", java.util.Set.of(),
+                        SkillRoutingResult.SkillRoutingAction.CONTINUE, 0.95, "pending topic answer"));
         SkillRouter router = new SkillRouter(
-                registry, store, policyFactory, mock(SkillLlmRouter.class), triggers);
+                registry, store, policyFactory, semanticRouter, triggers);
 
         SkillRoutingResult result = router.route("天气", "owner");
 

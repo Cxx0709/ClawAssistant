@@ -104,7 +104,6 @@ public class ScheduleReminderService {
             int sentCount = 0;
             for (Map.Entry<String, List<CourseEntity>> entry : coursesByUser.entrySet()) {
                 String userId = entry.getKey();
-                if (!timeResolver.hasBoundSchool(userId)) continue;
                 CourseService.DateCourses schedule = courseService.getCoursesOnDate(userId, now.toLocalDate());
                 int currentWeek = schedule.week();
                 if (!schedule.calendarConfigured() || currentWeek <= 0) {
@@ -225,22 +224,20 @@ public class ScheduleReminderService {
 
     public Map<String, Object> getStatus(String userId) {
         List<CourseEntity> courses = courseRepository.findByUserId(userId);
-        boolean schoolBound = timeResolver.hasBoundSchool(userId);
         boolean calendarConfigured = semesterService.hasSemester(userId) || semesterConfig.getSemesterStart() != null;
-        long resolved = schoolBound ? courses.stream()
-                .filter(course -> timeResolver.getStartTime(userId, course.getStartPeriod()) != null).count() : 0;
-        String status = courses.isEmpty() ? "no_courses" : !schoolBound ? "missing_school"
+        long resolved = courses.stream()
+                .filter(course -> timeResolver.getStartTime(userId, course.getStartPeriod()) != null).count();
+        String status = courses.isEmpty() ? "no_courses"
                 : !calendarConfigured ? "missing_semester" : resolved == 0 ? "missing_timetable"
                 : resolved < courses.size() ? "partially_ready" : "ready";
         String message = switch (status) {
             case "no_courses" -> "尚无课程，请先导入课表";
-            case "missing_school" -> "尚未绑定学校，无法按学校作息发送课前提醒";
             case "missing_semester" -> "尚未设置学期起始日期，无法判断实际教学周";
-            case "missing_timetable" -> "学校作息中没有对应课程节次，请先补全作息配置";
+            case "missing_timetable" -> "作息配置中没有对应课程节次，请先补全作息配置";
             case "partially_ready" -> "部分课程节次缺少作息配置，只有已匹配时间的课程可提醒";
             default -> "已满足课前提醒条件，系统每分钟读取最新课表，在上课前 " + reminderAdvanceMinutes + " 分钟发送站内通知";
         };
-        return Map.of("status", status, "school_bound", schoolBound, "calendar_configured", calendarConfigured,
+        return Map.of("status", status, "calendar_configured", calendarConfigured,
                 "advance_minutes", reminderAdvanceMinutes, "course_count", courses.size(),
                 "resolved_course_count", resolved, "message", message);
     }

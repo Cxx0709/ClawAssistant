@@ -7,7 +7,7 @@ import java.util.Optional;
 public class TransportTriggerPolicy implements SkillTriggerPolicy {
 
     private static final java.util.Set<String> TRANSPORT_VERBS = java.util.Set.of(
-            "打车", "叫车", "代驾", "坐车", "怎么去");
+            "坐车", "怎么去", "怎么走", "坐地铁", "坐公交");
 
     private static final java.util.Set<String> SEARCH_VERBS = java.util.Set.of(
             "搜索", "查一下", "有什么", "推荐");
@@ -31,9 +31,9 @@ public class TransportTriggerPolicy implements SkillTriggerPolicy {
         if (hasTransportVerb && hasPlace && !hasSearchVerb) {
             return new SkillTriggerMatch(true, 0.9, "transport: place + verb", false);
         } else if (hasTransportVerb) {
-            // 打车/叫车/代驾/坐车 本身已是强出行意图信号。
+            // 坐车/怎么去 等本身已是交通出行意图信号。
             // 置信度必须 >= SkillRouter.route() 的 0.8 门槛，否则该匹配会被丢弃，
-            // 导致「帮我打车去X」永远路由不到 transport 技能。
+            // 导致「怎么去X」永远路由不到 transport 技能。
             return new SkillTriggerMatch(true, 0.85, "transport: verb only", false);
         }
 

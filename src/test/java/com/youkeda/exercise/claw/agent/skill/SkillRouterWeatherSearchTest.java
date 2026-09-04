@@ -33,7 +33,14 @@ class SkillRouterWeatherSearchTest {
         TriggerPolicyFactory policies = mock(TriggerPolicyFactory.class);
         when(policies.getPolicy("keywordTriggerPolicy"))
                 .thenReturn(new KeywordTriggerPolicy(triggers));
-        router = new SkillRouter(registry, store, policies, mock(SkillLlmRouter.class), triggers);
+        SkillLlmRouter semantic = mock(SkillLlmRouter.class);
+        when(semantic.route(anyString(), anyString(), any(), any(), anyList())).thenAnswer(invocation -> {
+            Optional<SkillSession> session = invocation.getArgument(3);
+            return SkillRoutingResult.of("weather", java.util.Set.of(), session.isPresent()
+                    ? SkillRoutingResult.SkillRoutingAction.CONTINUE : SkillRoutingResult.SkillRoutingAction.ACTIVATE,
+                    0.95, "weather intent or date follow-up");
+        });
+        router = new SkillRouter(registry, store, policies, semantic, triggers);
     }
 
     @Test

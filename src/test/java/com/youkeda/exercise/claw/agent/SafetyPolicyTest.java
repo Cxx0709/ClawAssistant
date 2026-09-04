@@ -32,7 +32,6 @@ class SafetyPolicyTest {
     void shouldClassifyHighRiskToolsCorrectly() {
         SafetyPolicy policy = new SafetyPolicy();
         assertEquals(SafetyPolicy.ToolRiskLevel.HIGH, policy.getRiskLevel("file_delete"));
-        assertEquals(SafetyPolicy.ToolRiskLevel.HIGH, policy.getRiskLevel("didi_ride"));
         assertEquals(SafetyPolicy.ToolRiskLevel.HIGH, policy.getRiskLevel("cancel_schedule_task"));
     }
 
@@ -66,8 +65,6 @@ class SafetyPolicyTest {
         SafetyPolicy policy = new SafetyPolicy();
         assertEquals("BLOCKED_CONFIRM_REQUIRED",
                 policy.canExecute("file_delete", "{\"file_id\": 1}"));
-        assertEquals("BLOCKED_CONFIRM_REQUIRED",
-                policy.canExecute("didi_ride", "{}"));
     }
 
     @Test
@@ -212,7 +209,7 @@ class SafetyPolicyTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "file_delete", "file_update", "didi_ride",
+            "file_delete", "file_update",
             "create_schedule_task", "update_schedule_task", "cancel_schedule_task"
     })
     void allHighRiskToolsShouldBeBlocked(String toolName) {

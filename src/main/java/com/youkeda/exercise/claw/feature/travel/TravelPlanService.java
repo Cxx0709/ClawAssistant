@@ -89,6 +89,7 @@ public class TravelPlanService {
             case "revise_option" -> reviseOption(draft, args);
             case "budget_decision" -> handleBudgetDecision(draft, args);
             case "revise" -> handleRevision(draft, text(args, "feedback"));
+            case "update_itinerary" -> handleUpdateItinerary(draft, args);
             default -> collect(draft);
         };
         stateStore.save(userId, draft);
@@ -100,6 +101,122 @@ public class TravelPlanService {
     }
 
     // ==================== Action Handlers ====================
+
+    /**
+     * 更新行程中的某个项目（调整顺序/修改/新增/删除）
+     */
+    private ObjectNode handleUpdateItinerary(TravelPlanDraft draft, JsonNode args) {
+        ObjectNode result = objectMapper.createObjectNode();
+
+        String optionId = text(args, "option_id");
+        if (optionId.isBlank()) {
+            result.put("status", "ERROR");
+            result.put("message", "缺少 option_id 参数。");
+            return result;
+        }
+
+        TravelPlanOption option = draft.getOptions().stream()
+                .filter(o -> Objects.equals(o.getOptionId(), optionId))
+                .findFirst()
+                .orElse(null);
+
+        if (option == null) {
+            result.put("status", "ERROR");
+            result.put("message", "未找到方案 " + optionId);
+            return result;
+        }
+
+        String operation = text(args, "operation"); // update/add/remove/reorder
+        JsonNode itemNode = args.get("item");
+
+        List<TravelPlanOption.ItineraryItem> items = option.getItineraryItems();
+        if (items == null) {
+            items = new ArrayList<>();
+            option.setItineraryItems(items);
+        }
+
+        switch (operation) {
+            case "add" -> {
+                if (itemNode == null) {
+                    result.put("status", "ERROR");
+                    result.put("message", "add 操作需要 item 参数。");
+                    return result;
+                }
+                TravelPlanOption.ItineraryItem newItem = parseItineraryItem(itemNode);
+                items.add(newItem);
+                result.put("status", "OK");
+                result.put("message", "行程项已添加：" + newItem.getTitle());
+            }
+            case "update" -> {
+                if (itemNode == null) {
+                    result.put("status", "ERROR");
+                    result.put("message", "update 操作需要 item 参数。");
+                    return result;
+                }
+                int seq = itemNode.has("seq") ? itemNode.get("seq").asInt() : -1;
+                String day = text(itemNode, "day");
+                TravelPlanOption.ItineraryItem existing = items.stream()
+                        .filter(i -> i.getSeq() == seq && Objects.equals(i.getDay(), day))
+                        .findFirst()
+                        .orElse(null);
+                if (existing == null) {
+                    result.put("status", "ERROR");
+                    result.put("message", "未找到 Day " + day + " 序号 " + seq + " 的行程项。");
+                    return result;
+                }
+                if (itemNode.has("title")) existing.setTitle(text(itemNode, "title"));
+                if (itemNode.has("time")) existing.setTime(text(itemNode, "time"));
+                if (itemNode.has("status")) existing.setStatus(text(itemNode, "status"));
+                if (itemNode.has("note")) existing.setNote(text(itemNode, "note"));
+                existing.setStatus("adjusted"); // 修改后状态变更为 adjusted
+                result.put("status", "OK");
+                result.put("message", "行程项已更新：" + existing.getTitle());
+            }
+            case "remove" -> {
+                int seq = itemNode != null && itemNode.has("seq") ? itemNode.get("seq").asInt() : -1;
+                String day = itemNode != null ? text(itemNode, "day") : "";
+                boolean removed = items.removeIf(i -> i.getSeq() == seq && Objects.equals(i.getDay(), day));
+                if (!removed) {
+                    result.put("status", "ERROR");
+                    result.put("message", "未找到 Day " + day + " 序号 " + seq + " 的行程项。");
+                    return result;
+                }
+                result.put("status", "OK");
+                result.put("message", "行程项已删除。");
+            }
+            default -> {
+                result.put("status", "ERROR");
+                result.put("message", "不支持的操作：" + operation + "，可选值：add/update/remove");
+                return result;
+            }
+        }
+
+        // 刷新行程摘要
+        StringBuilder summary = new StringBuilder();
+        String currentDay = "";
+        for (TravelPlanOption.ItineraryItem item : items) {
+            if (!Objects.equals(currentDay, item.getDay())) {
+                currentDay = item.getDay();
+                summary.append(currentDay).append("：");
+            }
+            summary.append(item.getTitle()).append(" ");
+        }
+        option.setItinerarySummary(summary.toString().trim());
+
+        refreshState(result, draft);
+        return result;
+    }
+
+    private TravelPlanOption.ItineraryItem parseItineraryItem(JsonNode node) {
+        TravelPlanOption.ItineraryItem item = new TravelPlanOption.ItineraryItem();
+        item.setDay(text(node, "day"));
+        item.setSeq(node.has("seq") ? node.get("seq").asInt() : 0);
+        item.setTitle(text(node, "title"));
+        item.setTime(text(node, "time"));
+        item.setStatus(node.has("status") ? text(node, "status") : "added");
+        item.setNote(text(node, "note"));
+        return item;
+    }
 
     private ObjectNode collect(TravelPlanDraft draft) {
         Map<String, String> missing = findMissing(draft);

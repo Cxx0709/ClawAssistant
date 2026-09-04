@@ -11,7 +11,7 @@ import java.util.Map;
  * <p>仅包含结构化业务数据（出发地、人数、日期、预算、方案列表等）。
  * 不包含编排状态（stage 已移除，由 Agent Runtime 的 PlanState 管理）。
  */
-class TravelPlanDraft {
+public class TravelPlanDraft {
 
     private String departureCity;
     private Integer participantCount;

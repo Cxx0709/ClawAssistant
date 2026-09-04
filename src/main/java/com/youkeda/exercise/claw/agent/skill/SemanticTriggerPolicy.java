@@ -179,7 +179,7 @@ public class SemanticTriggerPolicy implements SkillTriggerPolicy {
             case "transport" -> {
                 expanded.add("怎么去这个地方");
                 expanded.add("坐什么车过去");
-                expanded.add("打车还是坐地铁");
+                expanded.add("坐地铁还是坐公交");
             }
             case "campus" -> {
                 expanded.add("我的课表是什么");
@@ -190,11 +190,6 @@ public class SemanticTriggerPolicy implements SkillTriggerPolicy {
                 expanded.add("有什么新番推荐");
                 expanded.add("这部番好看吗");
                 expanded.add("追一下最新一集");
-            }
-            case "information-scout" -> {
-                expanded.add("帮我关注这个领域的最新消息");
-                expanded.add("定期搜集相关资讯");
-                expanded.add("有什么新的动态");
             }
             case "image" -> {
                 expanded.add("帮我生成一张图片");

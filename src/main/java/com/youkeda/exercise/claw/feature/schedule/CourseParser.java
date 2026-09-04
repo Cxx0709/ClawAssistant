@@ -216,10 +216,11 @@ public class CourseParser {
                         log.warn("课表校验：新增课程缺必要字段，丢弃 | node={}", add);
                         continue;
                     }
-                    // 同格重复：同名 + 同天 + 时段重叠（课表一格至多一门课）
+                    // 同名同格也可能分周上课；只有教学周同时重叠才是重复。
                     boolean duplicate = result.stream().anyMatch(existing ->
                             existing.getCourseName().equals(c.getCourseName())
-                                    && overlappingPeriods(existing, c));
+                                    && overlappingPeriods(existing, c)
+                                    && overlappingWeeks(existing, c));
                     if (duplicate) {
                         log.warn("课表校验：新增课程与现有课程同格重复，丢弃 | course={} | {} {}节",
                                 c.getCourseName(), c.getDayDisplay(), c.getPeriodDisplay());

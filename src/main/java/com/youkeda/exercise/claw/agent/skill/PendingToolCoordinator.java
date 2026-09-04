@@ -251,7 +251,6 @@ public class PendingToolCoordinator {
         return switch (toolName) {
             case "file_delete" -> "删除文件";
             case "file_update" -> "修改文件";
-            case "didi_ride" -> "打车下单";
             case "create_schedule_task" -> "创建提醒";
             case "update_schedule_task" -> "修改提醒";
             case "cancel_schedule_task" -> "取消提醒";
