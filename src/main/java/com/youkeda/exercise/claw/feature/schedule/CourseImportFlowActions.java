@@ -55,10 +55,6 @@ public class CourseImportFlowActions {
 
     public String handleStartImport(String userId) {
         int existingCount = courseService.getCourseCount(userId);
-        if (existingCount > 0) {
-            courseService.deleteAll(userId);
-            log.info("导入新课表：已清除旧课表 | userId={} | count={}", userId, existingCount);
-        }
 
         importStateManager.setWaitingFile(userId);
 
@@ -66,11 +62,11 @@ public class CourseImportFlowActions {
         result.put("action", "import");
         result.put("status", "waiting_file");
         String msg = existingCount > 0
-                ? "已清除旧课表（共 " + existingCount + " 门课程），请发送新课表截图、PDF或Excel文件。"
+                ? "已保留现有课表（共 " + existingCount + " 条记录）。请发送新课表截图、PDF或Excel文件，预览确认后才替换对应学期的课表。"
                 : "请发送课表截图、PDF或Excel文件，我会帮你导入课表。";
         result.put("message", msg);
         if (existingCount > 0) {
-            result.put("cleared_count", existingCount);
+            result.put("existing_count", existingCount);
         }
         return result.toString();
     }
@@ -84,9 +80,11 @@ public class CourseImportFlowActions {
         // 优先使用图片/文件路径已解析并暂存的完整结构化课程（含星期/节次/周次），
         // 避免 Agent 从对话上下文裸重建时丢失结构（历史上曾全部退化成"周一第1节"）。
         List<CourseEntity> pending = importStateManager.getPendingCourses(userId);
+        SemesterEntity previousSemester = importStateManager.getPendingSemester(userId);
+        if (args.has("courses")) importStateManager.clear(userId);
         String jsonStr;
         List<CourseEntity> courses;
-        if (!pending.isEmpty()) {
+        if (!pending.isEmpty() && !args.has("courses")) {
             courses = pending;
             jsonStr = null;
             log.info("parse 使用图片/文件解析的待确认课程 | userId={} | count={}", userId, pending.size());
@@ -104,6 +102,14 @@ public class CourseImportFlowActions {
                 return "{\"action\":\"parse\",\"status\":\"error\","
                         + "\"message\":\"无法从提供的数据中识别出有效的课程信息。请重新上传课表图片/文件；"
                         + "若使用文字导入，每条课程必须包含星期(day_of_week)和节次(start_period/end_period)。\"}";
+            }
+            if (courses.size() != coursesNode.size()) {
+                importStateManager.clear(userId);
+                ObjectNode review = objectMapper.createObjectNode();
+                review.put("action", "parse");
+                review.put("status", "needs_review");
+                review.put("message", "部分课程缺少名称、星期或节次，尚未保存。请核对并补全所有记录后重新预览，不能忽略无法识别的课程。");
+                return review.toString();
             }
         }
 
@@ -126,6 +132,9 @@ public class CourseImportFlowActions {
         if (academicYear > 0 && !term.isBlank()) {
             detectedSemester = semesterDetector.detectFromParams(userId, academicYear, term);
         }
+        if (detectedSemester == null && academicYear == 0 && term.isBlank()) {
+            detectedSemester = previousSemester;
+        }
         if (detectedSemester == null) {
             // LLM 未提供学期信息，尝试自动推算
             detectedSemester = semesterDetector.detectAuto(userId);
@@ -146,6 +155,7 @@ public class CourseImportFlowActions {
         result.put("action", "parse");
         result.put("status", "preview");
         result.put("count", courses.size());
+        result.set("internal_conflicts", objectMapper.valueToTree(internalConflicts));
 
         int currentWeek = resolveCurrentWeek(userId);
         result.put("current_week", currentWeek);
@@ -155,6 +165,12 @@ public class CourseImportFlowActions {
         for (CourseEntity c : courses) {
             ObjectNode item = array.addObject();
             item.put("course_name", c.getCourseName());
+            item.put("day_of_week", c.getDayOfWeek());
+            item.put("start_period", c.getStartPeriod());
+            item.put("end_period", c.getEndPeriod());
+            item.put("start_week", c.getStartWeek());
+            item.put("end_week", c.getEndWeek());
+            item.put("week_type", c.getWeekType());
             item.put("day", c.getDayDisplay());
             item.put("period", c.getPeriodDisplay());
             item.put("weeks", c.getWeekDisplay());
@@ -185,7 +201,7 @@ public class CourseImportFlowActions {
                 item.put("new_course", cf.newCourse().getCourseName());
                 item.put("description", cf.description());
             }
-            result.put("warning", "检测到 " + conflicts.size() + " 个时间冲突，确认后冲突课程将被覆盖");
+            result.put("warning", "检测到 " + conflicts.size() + " 个时间冲突，请核对。确认后替换目标学期的完整课表，其他学期保留。");
         }
 
         result.put("formatted_preview",
@@ -193,7 +209,7 @@ public class CourseImportFlowActions {
 
         String conflictSuffix = conflicts.isEmpty() ? "" : "，" + conflicts.size() + " 个时间冲突";
         result.put("message", "已识别出以下 " + courses.size() + " 门课程" + conflictSuffix
-                + "，请确认是否导入？（回复「确认」或「取消」）");
+                + "，尚未保存。确认后替换目标学期完整课表（无学期信息时仅替换未绑定学期记录），其他学期保留。请确认或取消。");
         return result.toString();
     }
 
@@ -208,9 +224,7 @@ public class CourseImportFlowActions {
             for (int j = i + 1; j < courses.size(); j++) {
                 CourseEntity a = courses.get(i);
                 CourseEntity b = courses.get(j);
-                if (a.getDayOfWeek() == b.getDayOfWeek()
-                        && a.getStartPeriod() <= b.getEndPeriod()
-                        && b.getStartPeriod() <= a.getEndPeriod()) {
+                if (CourseService.isTimeConflict(a, b)) {
                     String desc = String.format("day=%d period=%d-%d: 「%s」与「%s」冲突",
                             a.getDayOfWeek(), a.getStartPeriod(), a.getEndPeriod(),
                             a.getCourseName(), b.getCourseName());
@@ -222,6 +236,9 @@ public class CourseImportFlowActions {
     }
 
     public String handleConfirm(String userId) {
+        if (importStateManager.getPhase(userId) != CourseImportStateManager.Phase.WAITING_CONFIRM) {
+            return "{\"action\":\"confirm\",\"status\":\"error\",\"message\":\"请先预览完整课表并确认学期，再确认保存。\"}";
+        }
         List<CourseEntity> pending = importStateManager.getPendingCourses(userId);
         if (pending.isEmpty()) {
             return "{\"action\":\"confirm\",\"status\":\"error\","

@@ -4,14 +4,21 @@ import type { AppUser } from './lib/types';
 import AuthPage from './pages/AuthPage';
 import ChatPage from './pages/ChatPage';
 import Landing from './pages/Landing';
+import VisualizationPage from './pages/VisualizationPage';
+import MemoryPage from './pages/MemoryPage';
 
 /**
  * 单页双视图（home / chat），状态切换代替路由 —— 避免后端 fallback 问题。
  * 构建产物直接由 Spring Boot 托管，任何路径都可回退到本入口。
  */
 export default function App() {
-  const [view, setView] = useState<'home' | 'chat'>(() =>
-    new URLSearchParams(window.location.search).has('conversation') ? 'chat' : 'home');
+  const [view, setView] = useState<'home' | 'chat' | 'visualization' | 'memories'>(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('conversation')) return 'chat';
+    if (params.has('diagnostics')) return 'visualization';
+    if (params.has('memories') || params.has('visualization')) return 'memories';
+    return 'home';
+  });
   const [user, setUser] = useState<AppUser | null>(null);
   const [setupRequired, setSetupRequired] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -40,6 +47,10 @@ export default function App() {
     setView('home');
   }, []);
   const goChat = useCallback(() => setView('chat'), []);
+  const goVisualization = useCallback(() => {
+    window.history.replaceState(null, '', '?memories');
+    setView('memories');
+  }, []);
   const signOut = useCallback(async () => {
     await logout();
     setUser(null);
@@ -58,7 +69,13 @@ export default function App() {
     }} />;
   }
 
+  if (view === 'visualization') {
+    return <VisualizationPage onBack={goHome} />;
+  }
+
+  if (view === 'memories') return <MemoryPage onBack={goHome} />;
+
   return view === 'chat'
     ? <ChatPage onHome={goHome} user={user} onLogout={signOut} />
-    : <Landing onStart={goChat} user={user} onLogout={signOut} />;
+    : <Landing onStart={goChat} onVisualization={goVisualization} user={user} onLogout={signOut} />;
 }

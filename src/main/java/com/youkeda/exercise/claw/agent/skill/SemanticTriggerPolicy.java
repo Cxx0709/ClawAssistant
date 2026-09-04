@@ -6,6 +6,9 @@ import com.youkeda.exercise.claw.skill.SkillRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -42,10 +45,12 @@ public class SemanticTriggerPolicy implements SkillTriggerPolicy {
         this.embeddingClient = embeddingClient;
         this.skillRegistry = skillRegistry;
         this.triggerProperties = triggerProperties;
+    }
 
-        // 初始化代表性示例
+    @EventListener(ApplicationReadyEvent.class)
+    @Order(1) // SkillRegistry registers configured skills at order 0.
+    public void initializeAfterSkillsReady() {
         initializeRepresentativeExamples();
-
         log.info("SemanticTriggerPolicy initialized with {} skills", skillEmbeddingCache.size());
     }
 
@@ -268,6 +273,34 @@ public class SemanticTriggerPolicy implements SkillTriggerPolicy {
         for (Map.Entry<String, List<String>> entry : skillRepresentativeExamples.entrySet()) {
             computeAndCacheSkillEmbedding(entry.getKey(), entry.getValue());
         }
+    }
+
+    public int getExampleCount(String skillName) {
+        return skillRepresentativeExamples.getOrDefault(skillName, List.of()).size();
+    }
+
+    public boolean hasSkillEmbedding(String skillName) {
+        return !isEmptyEmbedding(skillEmbeddingCache.get(skillName));
+    }
+
+    /** Embed a diagnostic query once and compare each cached skill separately. */
+    public Map<String, Double> similarities(String message) {
+        Map<String, float[]> available = new TreeMap<>();
+        skillEmbeddingCache.forEach((name, vector) -> {
+            if (!isEmptyEmbedding(vector)) available.put(name, vector);
+        });
+        if (available.isEmpty()) throw new IllegalStateException("技能向量缓存尚未就绪，请检查嵌入服务和初始化日志");
+        float[] query = embeddingClient.embed(message);
+        if (isEmptyEmbedding(query)) throw new IllegalStateException("无法生成查询向量，请检查嵌入服务配置或连接");
+        Map<String, Double> scores = new LinkedHashMap<>();
+        available.forEach((name, vector) -> {
+            if (query.length == vector.length) {
+                double score = EmbeddingClient.cosineSimilarity(query, vector);
+                if (Double.isFinite(score)) scores.put(name, score);
+            }
+        });
+        if (scores.isEmpty()) throw new IllegalStateException("查询向量和技能向量维度不一致，请检查嵌入模型配置");
+        return scores;
     }
 
     private record SkillMatchResult(String skillName, float similarity) {}

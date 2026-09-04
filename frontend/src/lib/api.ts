@@ -116,10 +116,10 @@ export async function fetchCurrentUser(): Promise<AppUser> {
   return getJson<AppUser>('/api/auth/me');
 }
 
-export async function uploadArtifact(file: File): Promise<Artifact> {
+export async function uploadArtifact(file: File, signal?: AbortSignal): Promise<Artifact> {
   const body = new FormData();
   body.append('file', file);
-  const res = await apiFetch('/api/artifacts', { method: 'POST', body });
+  const res = await apiFetch('/api/artifacts', { method: 'POST', body, signal });
   if (!res.ok) throw new Error((await readError(res)) || '上传失败');
   return (await res.json()) as Artifact;
 }

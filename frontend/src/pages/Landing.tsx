@@ -55,8 +55,9 @@ function FeatureIcon({ name }: { name: string }) {
   );
 }
 
-export default function Landing({ onStart, user, onLogout }: {
+export default function Landing({ onStart, onVisualization, user, onLogout }: {
   onStart: () => void;
+  onVisualization: () => void;
   user: AppUser;
   onLogout: () => void;
 }) {
@@ -84,6 +85,17 @@ export default function Landing({ onStart, user, onLogout }: {
         </div>
         <div className="flex items-center gap-3">
           <span className="hidden text-sm text-ink-soft sm:inline">{user.displayName}</span>
+          <button
+            type="button"
+            onClick={onVisualization}
+            className="text-[13px] text-ink-faint hover:text-ink transition-colors flex items-center gap-1"
+            title="查看和管理我的记忆"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <span className="hidden sm:inline">我的记忆</span>
+          </button>
           <button type="button" onClick={onLogout} className="text-[13px] text-ink-faint hover:text-ink">退出</button>
           <button
             type="button"

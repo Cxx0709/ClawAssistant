@@ -136,13 +136,14 @@ export default function RightRail({ refreshToken }: RailProps) {
 
         <div className="mx-4 border-t border-line/70" />
 
-        <Section title="长期记忆" empty="暂无记忆">
+        <Section title="我的记忆" empty="暂无记忆">
+          <a href="?memories" target="_blank" rel="noopener noreferrer" className="block text-xs text-brand-deep hover:underline">查看和管理全部记忆 ↗</a>
           {(memories ?? []).slice(0, 8).map((m) => (
             <div key={m.id} className="rounded-lg bg-white px-3 py-2 shadow-[0_1px_0_rgba(20,21,23,.04)]">
               <p className="line-clamp-2 text-[12.5px] leading-snug text-ink-soft">{m.content}</p>
               <p className="mt-1 flex items-center gap-1 text-[10.5px] text-ink-faint">
                 <span className="rounded bg-canvas-sub px-1 py-px">{categoryLabel(m.category)}</span>
-                <span>重要度 {Math.round((m.importance ?? 0) * 100)}%</span>
+                <a href={`?memories&memoryId=${encodeURIComponent(m.id)}`} target="_blank" rel="noopener noreferrer" className="text-brand-deep hover:underline">查看详情</a>
               </p>
             </div>
           ))}

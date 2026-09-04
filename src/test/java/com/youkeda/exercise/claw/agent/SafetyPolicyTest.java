@@ -122,7 +122,7 @@ class SafetyPolicyTest {
                 registry, policy, mock(SkillPendingCoordinator.class),
                 mock(PendingToolCoordinator.class),
                 recorder, mock(ToolResultStatusParser.class), mock(PlanStore.class),
-                new ObjectMapper());
+                new ObjectMapper(), mock(com.youkeda.exercise.claw.skill.SkillRegistry.class));
 
         Tool deleteTool = mock(Tool.class);
         when(deleteTool.getName()).thenReturn("file_delete");
@@ -154,7 +154,7 @@ class SafetyPolicyTest {
                 registry, policy, mock(SkillPendingCoordinator.class),
                 mock(PendingToolCoordinator.class),
                 recorder, mock(ToolResultStatusParser.class), mock(PlanStore.class),
-                new ObjectMapper());
+                new ObjectMapper(), mock(com.youkeda.exercise.claw.skill.SkillRegistry.class));
 
         Tool deleteTool = mock(Tool.class);
         when(deleteTool.getName()).thenReturn("file_delete");
@@ -186,7 +186,7 @@ class SafetyPolicyTest {
                 registry, policy, mock(SkillPendingCoordinator.class),
                 mock(PendingToolCoordinator.class),
                 recorder, statusParser, mock(PlanStore.class),
-                new ObjectMapper());
+                new ObjectMapper(), mock(com.youkeda.exercise.claw.skill.SkillRegistry.class));
 
         Tool webSearch = mock(Tool.class);
         when(webSearch.getName()).thenReturn("web_search");

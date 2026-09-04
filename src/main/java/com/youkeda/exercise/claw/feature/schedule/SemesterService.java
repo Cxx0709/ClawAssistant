@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.Optional;
 
 /**
@@ -39,6 +40,12 @@ public class SemesterService {
      */
     public Optional<SemesterEntity> getCurrentSemester(String userId) {
         return semesterRepository.findLatestByUserId(userId);
+    }
+
+    public Optional<SemesterEntity> getSemesterForDate(String userId, LocalDate date) {
+        return semesterRepository.findByUserId(userId).stream()
+                .filter(semester -> semester.getStartDate() != null && !date.isBefore(semester.getStartDate()))
+                .max(Comparator.comparing(SemesterEntity::getStartDate));
     }
 
     /**

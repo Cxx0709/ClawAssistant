@@ -27,10 +27,11 @@ public class MemoryAsyncConfiguration {
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         executor.setTaskDecorator(task -> {
             String capturedUserId = userExecutionContext.currentUserIdOrNull();
+            String capturedConversationId = userExecutionContext.currentConversationIdOrNull();
             if (capturedUserId == null) return task;
             return () -> {
                 try (UserExecutionContext.Scope ignored =
-                             userExecutionContext.open(capturedUserId)) {
+                             userExecutionContext.open(capturedUserId, capturedConversationId)) {
                     task.run();
                 }
             };

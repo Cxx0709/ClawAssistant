@@ -25,6 +25,7 @@ import io.qdrant.client.grpc.Points.Vectors;
 import io.qdrant.client.grpc.Points.WithPayloadSelector;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import com.youkeda.exercise.claw.identity.UserExecutionContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -49,11 +50,13 @@ public class QdrantMemoryStore implements MemoryStore {
     private static final Logger log = LoggerFactory.getLogger(QdrantMemoryStore.class);
 
     private final QdrantProperties props;
+    private final UserExecutionContext userContext;
 
     private QdrantClient client;
 
-    public QdrantMemoryStore(QdrantProperties props) {
+    public QdrantMemoryStore(QdrantProperties props, UserExecutionContext userContext) {
         this.props = props;
+        this.userContext = userContext;
     }
 
     @PostConstruct
@@ -170,19 +173,31 @@ public class QdrantMemoryStore implements MemoryStore {
     private List<MemorySearchResult> searchScoredInternal(
             float[] queryVector, int topK,
             MemoryCategory category, Float minScore) {
+        return searchScoredInternal(queryVector, topK, category, minScore, false);
+    }
+
+    @Override
+    public List<MemoryItem> findConsolidationCandidates(float[] vector, float minScore) {
+        return toItems(searchScoredInternal(vector, 1, null, minScore, true));
+    }
+
+    private List<MemorySearchResult> searchScoredInternal(
+            float[] queryVector, int topK, MemoryCategory category, Float minScore, boolean includeDisabled) {
         if (client == null) {
             log.warn("Qdrant 不可用，返回空结果");
             return List.of();
         }
         try {
-            Filter filter = buildCategoryFilter(category);
+            Filter.Builder filter = buildCategoryFilter(category).toBuilder();
+            if (!includeDisabled) filter.addMustNot(Condition.newBuilder().setField(FieldCondition.newBuilder()
+                    .setKey("disabled").setMatch(Match.newBuilder().setBoolean(true))));
 
             SearchPoints.Builder requestBuilder = SearchPoints.newBuilder()
                     .setCollectionName(props.getCollection())
                     .addAllVector(toFloatList(queryVector))
                     .setLimit(topK)
                     .setWithPayload(WithPayloadSelector.newBuilder().setEnable(true).build())
-                    .setFilter(filter);
+                    .setFilter(filter.build());
             if (minScore != null) {
                 requestBuilder.setScoreThreshold(minScore);
             }
@@ -210,24 +225,28 @@ public class QdrantMemoryStore implements MemoryStore {
 
     @Override
     public List<MemoryItem> getAll() {
-        if (client == null) return List.of();
+        if (client == null) throw new IllegalStateException("记忆服务暂时不可用，请稍后重试");
         try {
-            ScrollPoints request = ScrollPoints.newBuilder()
+            ScrollPoints.Builder request = ScrollPoints.newBuilder()
                     .setCollectionName(props.getCollection())
+                    .setFilter(tenantFilter().build())
                     .setWithPayload(WithPayloadSelector.newBuilder().setEnable(true).build())
-                    .setLimit(1000)
-                    .build();
-
-            ScrollResponse response = await(client.scrollAsync(request));
+                    .setLimit(256);
             List<MemoryItem> items = new ArrayList<>();
-            for (RetrievedPoint rp : response.getResultList()) {
-                MemoryItem item = payloadToMemoryItem(rp.getId().getUuid(), rp.getPayloadMap());
-                if (item != null) items.add(item);
-            }
+            ScrollResponse response;
+            do {
+                response = await(client.scrollAsync(request.build()));
+                for (RetrievedPoint rp : response.getResultList()) {
+                    MemoryItem item = payloadToMemoryItem(rp.getId().getUuid(), rp.getPayloadMap());
+                    if (item != null) items.add(item);
+                }
+                if (response.hasNextPageOffset()) request.setOffset(response.getNextPageOffset());
+            } while (response.hasNextPageOffset());
+            items.sort(java.util.Comparator.comparing(MemoryItem::updatedAt).reversed());
             return items;
         } catch (Exception e) {
             log.error("全量查询失败", e);
-            return List.of();
+            throw new IllegalStateException("记忆读取失败，请稍后重试", e);
         }
     }
 
@@ -280,7 +299,7 @@ public class QdrantMemoryStore implements MemoryStore {
         try {
             // 清空所有记忆
             await(client.deleteAsync(props.getCollection(),
-                    Filter.newBuilder().build()));
+                    tenantFilter().build()));
             log.info("所有记忆已清空");
         } catch (Exception e) {
             log.error("清空记忆失败", e);
@@ -293,7 +312,7 @@ public class QdrantMemoryStore implements MemoryStore {
         try {
             Long result = await(client.countAsync(
                     props.getCollection(),
-                    Filter.newBuilder().build(),
+                    tenantFilter().build(),
                     true,
                     null
             ));
@@ -310,8 +329,8 @@ public class QdrantMemoryStore implements MemoryStore {
      * 构建分类过滤条件（Condition 包装 FieldCondition）
      */
     private Filter buildCategoryFilter(MemoryCategory category) {
-        if (category == null) return Filter.newBuilder().build();
-        return Filter.newBuilder()
+        if (category == null) return tenantFilter().build();
+        return tenantFilter()
                 .addMust(Condition.newBuilder()
                         .setField(FieldCondition.newBuilder()
                                 .setKey("category")
@@ -322,7 +341,7 @@ public class QdrantMemoryStore implements MemoryStore {
     }
 
     private Filter buildIdFilter(String memoryId) {
-        return Filter.newBuilder()
+        return tenantFilter()
                 .addMust(Condition.newBuilder()
                         .setHasId(HasIdCondition.newBuilder()
                                 .addHasId(PointId.newBuilder().setUuid(memoryId).build())
@@ -332,7 +351,7 @@ public class QdrantMemoryStore implements MemoryStore {
     }
 
     private Filter buildTopicFilter(String topicKey) {
-        return Filter.newBuilder()
+        return tenantFilter()
                 .addMust(Condition.newBuilder()
                         .setField(FieldCondition.newBuilder()
                                 .setKey("topicKey")
@@ -347,6 +366,9 @@ public class QdrantMemoryStore implements MemoryStore {
      */
     private Map<String, Value> buildPayload(MemoryItem item) {
         Map<String, Value> payload = new HashMap<>();
+        payload.put("userId", value(userContext.requireUserId()));
+        payload.put("disabled", value(item.disabled()));
+        payload.put("sourceConversationId", value(item.sourceConversationId() == null ? "" : item.sourceConversationId()));
         payload.put("category", value(item.category().name()));
         payload.put("topicKey", value(item.topicKey()));
         payload.put("content", value(item.content()));
@@ -386,7 +408,9 @@ public class QdrantMemoryStore implements MemoryStore {
                     MemorySource.valueOf(sourceStr),
                     Instant.ofEpochMilli(createdMs),
                     Instant.ofEpochMilli(updatedMs),
-                    hitCount);
+                    hitCount,
+                    payload.containsKey("disabled") && payload.get("disabled").getBoolValue(),
+                    getString(payload, "sourceConversationId"));
         } catch (Exception e) {
             log.warn("payload 解析失败 | pointId={}", pointId, e);
             return null;
@@ -429,6 +453,12 @@ public class QdrantMemoryStore implements MemoryStore {
         List<Float> list = new ArrayList<>(arr.length);
         for (float f : arr) list.add(f);
         return list;
+    }
+
+    private Filter.Builder tenantFilter() {
+        return Filter.newBuilder().addMust(Condition.newBuilder()
+                .setField(FieldCondition.newBuilder().setKey("userId")
+                        .setMatch(Match.newBuilder().setKeyword(userContext.requireUserId()))));
     }
 
     private <T> T await(Future<T> future) throws Exception {

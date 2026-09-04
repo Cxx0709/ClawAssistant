@@ -21,16 +21,19 @@ class MemoryAsyncConfigurationTest {
                 .memoryTaskExecutor(new LongTermMemoryProperties(), identity);
         CountDownLatch completed = new CountDownLatch(1);
         AtomicReference<String> observedUserId = new AtomicReference<>();
+        AtomicReference<String> observedConversationId = new AtomicReference<>();
 
-        try (UserExecutionContext.Scope ignored = identity.open("web-user")) {
+        try (UserExecutionContext.Scope ignored = identity.open("web-user", "conversation-1")) {
             executor.execute(() -> {
                 observedUserId.set(identity.requireUserId());
+                observedConversationId.set(identity.currentConversationIdOrNull());
                 completed.countDown();
             });
         }
 
         assertTrue(completed.await(3, TimeUnit.SECONDS));
         assertEquals("web-user", observedUserId.get());
+        assertEquals("conversation-1", observedConversationId.get());
         ((ThreadPoolTaskExecutor) executor).shutdown();
     }
 }

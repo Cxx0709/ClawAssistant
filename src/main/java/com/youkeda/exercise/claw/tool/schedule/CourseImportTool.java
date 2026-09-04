@@ -67,11 +67,13 @@ public class CourseImportTool extends AbstractTool {
                 + "- 导入：使用 import -> parse -> confirm 三步流程导入课表（图片/PDF/Excel/直接JSON）\n"
                 + "- 学校：query_school（查询当前学校信息），set_school（绑定学校，需school_name），\n"
                 + "         list_schools（查看可用的学校模板列表）\n"
-                + "- 查询：query_today（今日课程，自动过滤学期周次和单双周）\n"
-                + "         query_weekday（指定星期几的课程，如\"周一\"->day_of_week=1）\n"
+                + "- 查询：query_today（今日课程），query_date（具体日期，需date=yyyy-MM-dd，按目标学期、教学周和单双周过滤）\n"
+                + "         query_weekday（本周指定星期，如\"周一\"->day_of_week=1）；明天/下周须用query_date\n"
+                + "         query_reminder_status（查询课前提醒真实状态及缺失配置）\n"
                 + "         query_all（全部课程列表）\n"
                 + "         query_free_time（今日空闲时间段）\n"
-                + "- 管理：delete（单条删除，需id）、update（修改）、clear（清空全部）\n"
+                + "- 管理：delete（单条删除，需course_id）、update（按course_id修改一条记录，返回前后对比和提醒状态）、clear（清空全部）\n"
+                + "同名课程可有不同上课时段，先query_all定位ID。导入开始不删除旧数据，预览确认后才替换目标学期。\n"
                 + "适用于：用户问\"今天有什么课\"\"明天课表\"\"导入课表\"\"帮我加一门课\"\"删除高数\"等场景。";
     }
 
@@ -80,13 +82,14 @@ public class CourseImportTool extends AbstractTool {
         ObjectNode action = objectMapper.createObjectNode();
         action.put("type", "string");
         action.put("description", "操作类型：import(开始导入), parse(解析并预览), confirm(确认保存), "
-                + "cancel(取消), query_today(今日课程), query_free_time(空闲时间), "
+                + "cancel(取消), query_today(今日课程), query_date(具体日期), query_reminder_status(提醒状态), query_free_time(空闲时间), "
                 + "query_all(全部课程), query_weekday(指定星期), delete(删除), update(修改), clear(清空), "
                 + "confirm_semester(确认学期), set_semester(设置学期), "
                 + "query_school(查询当前学校), set_school(绑定学校需school_name), "
                 + "list_schools(查看可用学校列表)");
         action.putArray("enum").add("import").add("parse").add("confirm").add("cancel")
                 .add("query_today").add("query_free_time").add("query_all").add("query_weekday")
+                .add("query_date").add("query_reminder_status")
                 .add("delete").add("update").add("clear")
                 .add("confirm_semester").add("set_semester")
                 .add("query_school").add("set_school").add("list_schools");
@@ -100,7 +103,7 @@ public class CourseImportTool extends AbstractTool {
         term.put("type", "string");
         term.put("description", "学期类型（可选）。用于 parse/import/set_semester 操作。"
                 + "SPRING=春季学期, FALL=秋季学期。"
-                + "从用户说'下学期'推断为FALL，'春季'推断为SPRING。"
+                + "'下学期'应结合当前学期确定，不能固定推断为FALL。"
                 + "如用户未明确说明学期，不要猜测，留空即可。");
         term.putArray("enum").add("SPRING").add("FALL");
 
@@ -119,6 +122,7 @@ public class CourseImportTool extends AbstractTool {
                     .end()
                 .integer("course_id", "课程 ID（delete 和 update 时必填）。调用 delete 前请先通过 query_all 获取课程 ID。", false)
                 .integer("day_of_week", "星期几：1=周一 2=周二 3=周三 4=周四 5=周五 6=周六 7=周日", false)
+                .string("date", "具体日历日期 yyyy-MM-dd，query_date 必填。明天、下周等先用 time_query 确认当前日期后换算。", false)
                 .integer("academic_year", "学年（可选），如2026。用于 parse/import/set_semester 操作。"
                         + "当用户提到'下学期'、'2026年秋季'等学期信息时填写。"
                         + "如用户未明确说明学期，不要猜测，留空即可。", false)
@@ -155,6 +159,8 @@ public class CourseImportTool extends AbstractTool {
                 case "update" -> queryActions.handleUpdate(args, userId);
                 case "clear" -> queryActions.handleClear(userId);
                 case "query_today" -> queryActions.handleQueryToday(userId);
+                case "query_date" -> queryActions.handleQueryDate(args, userId);
+                case "query_reminder_status" -> queryActions.handleReminderStatus(userId);
                 case "query_free_time" -> queryActions.handleQueryFreeTime(userId);
                 case "query_all" -> queryActions.handleQueryAll(userId);
                 case "query_weekday" -> queryActions.handleQueryWeekday(args, userId);

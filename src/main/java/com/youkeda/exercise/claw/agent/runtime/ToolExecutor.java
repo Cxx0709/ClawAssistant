@@ -52,6 +52,7 @@ public class ToolExecutor {
     private final ToolResultStatusParser toolResultStatusParser;
     private final PlanStore planStore;
     private final ObjectMapper objectMapper;
+    private final com.youkeda.exercise.claw.skill.SkillRegistry skillRegistry;
 
     public ToolExecutor(ToolRegistry toolRegistry,
                         SafetyPolicy safetyPolicy,
@@ -60,7 +61,8 @@ public class ToolExecutor {
                         AgentActivityRecorder activityRecorder,
                         ToolResultStatusParser toolResultStatusParser,
                         PlanStore planStore,
-                        ObjectMapper objectMapper) {
+                        ObjectMapper objectMapper,
+                        com.youkeda.exercise.claw.skill.SkillRegistry skillRegistry) {
         this.toolRegistry = toolRegistry;
         this.safetyPolicy = safetyPolicy;
         this.skillPendingCoordinator = skillPendingCoordinator;
@@ -69,6 +71,7 @@ public class ToolExecutor {
         this.toolResultStatusParser = toolResultStatusParser;
         this.planStore = planStore;
         this.objectMapper = objectMapper;
+        this.skillRegistry = skillRegistry;
     }
 
     /**
@@ -164,6 +167,13 @@ public class ToolExecutor {
                 try {
                     result = fn.execute(tc.arguments(), execContext);
                     session = skillPendingCoordinator.afterToolExecution(session, toolName, result);
+                    // ToolSkillResolver：工具执行成功后，自动锁定所属 skill
+                    String resolvedSkill = skillRegistry.resolveSkillForTool(toolName);
+                    if (resolvedSkill != null && !resolvedSkill.equals(session.activeSkill())) {
+                        log.info("ToolSkillResolver | tool={} → skill={} (原 skill={})",
+                                toolName, resolvedSkill, session.activeSkill());
+                        session = session.withActiveSkill(resolvedSkill);
+                    }
                     resultStatus = parseResultStatus(result);
                     if (resultStatus == null) {
                         // 防御：解析器返回 null 时按失败处理

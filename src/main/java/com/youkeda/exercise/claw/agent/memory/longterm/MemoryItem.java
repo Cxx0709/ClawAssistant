@@ -1,5 +1,7 @@
 package com.youkeda.exercise.claw.agent.memory.longterm;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -13,10 +15,28 @@ public record MemoryItem(
         float importance,
         float confidence,
         MemorySource source,
-        Instant createdAt,
-        Instant updatedAt,
-        int hitCount
+        @JsonFormat(shape = JsonFormat.Shape.STRING) Instant createdAt,
+        @JsonFormat(shape = JsonFormat.Shape.STRING) Instant updatedAt,
+        int hitCount,
+        boolean disabled,
+        String sourceConversationId
 ) {
+
+    public MemoryItem(String id, MemoryCategory category, String topicKey, String content,
+                      String evidence, float importance, float confidence, MemorySource source,
+                      Instant createdAt, Instant updatedAt, int hitCount) {
+        this(id, category, topicKey, content, evidence, importance, confidence, source,
+                createdAt, updatedAt, hitCount, false, null);
+    }
+
+    public MemoryItem withDetails(boolean paused, String conversationId) {
+        return new MemoryItem(id, category, topicKey, content, evidence, importance, confidence,
+                source, createdAt, updatedAt, hitCount, paused, conversationId);
+    }
+
+    public Instant nextUpdateTime() {
+        return Instant.ofEpochMilli(Math.max(System.currentTimeMillis(), updatedAt.toEpochMilli() + 1));
+    }
 
     public static MemoryItem ofAuto(MemoryCategory category,
                                     String content, float importance) {
@@ -68,13 +88,13 @@ public record MemoryItem(
                 resolvedContent, resolvedEvidence,
                 Math.max(importance, incoming.importance),
                 resolvedConfidence,
-                resolvedSource, createdAt, Instant.now(), hitCount);
+                resolvedSource, createdAt, nextUpdateTime(), hitCount, disabled, incoming.sourceConversationId);
     }
 
     public MemoryItem withHit() {
         return new MemoryItem(
                 id, category, topicKey, content, evidence,
-                importance, confidence, source, createdAt, updatedAt, hitCount + 1);
+                importance, confidence, source, createdAt, updatedAt, hitCount + 1, disabled, sourceConversationId);
     }
 
     private static String normalizeTopicKey(String topicKey) {

@@ -5,6 +5,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -99,6 +101,36 @@ public class CourseService {
     }
 
     // ==================== 查询 ====================
+
+    public record DateCourses(LocalDate date, int week, Long semesterId,
+                              boolean calendarConfigured, List<CourseEntity> courses) {}
+
+    /** Use the requested date's semester and week, including Sunday/Monday boundaries. */
+    public DateCourses getCoursesOnDate(String userId, LocalDate date) {
+        Optional<SemesterEntity> semester = semesterService.getSemesterForDate(userId, date);
+        LocalDate start;
+        Long semesterId = null;
+        List<CourseEntity> candidates;
+        if (semester.isPresent()) {
+            start = semester.get().getStartDate();
+            semesterId = semester.get().getId();
+            candidates = courseRepository.findByUserIdAndSemester(userId, semesterId);
+        } else if (semesterService.hasSemester(userId)) {
+            return new DateCourses(date, -1, null, true, List.of());
+        } else {
+            start = semesterConfig.getSemesterStart();
+            if (start == null) return new DateCourses(date, -1, null, false, List.of());
+            candidates = courseRepository.findByUserIdNullSemester(userId);
+        }
+        if (date.isBefore(start)) return new DateCourses(date, -1, semesterId, true, List.of());
+        int week = (int) (ChronoUnit.DAYS.between(start, date) / 7) + 1;
+        List<CourseEntity> courses = candidates.stream()
+                .filter(course -> course.getDayOfWeek() == date.getDayOfWeek().getValue())
+                .filter(course -> course.isActiveInWeek(week))
+                .sorted(Comparator.comparingInt(CourseEntity::getStartPeriod))
+                .toList();
+        return new DateCourses(date, week, semesterId, true, courses);
+    }
 
     /**
      * 获取用户全部课程（从 SQLite 查询）
@@ -347,7 +379,7 @@ public class CourseService {
      *   <li>周次有交集，且在交集内至少有一周两门课都激活</li>
      * </ol>
      */
-    private boolean isTimeConflict(CourseEntity a, CourseEntity b) {
+    static boolean isTimeConflict(CourseEntity a, CourseEntity b) {
         // 1. 同一天
         if (a.getDayOfWeek() != b.getDayOfWeek()) {
             return false;

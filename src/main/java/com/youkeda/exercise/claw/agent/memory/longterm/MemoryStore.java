@@ -9,6 +9,11 @@ import java.util.List;
  */
 public interface MemoryStore {
 
+    /** Includes paused matches so automatic extraction cannot silently reactivate them. */
+    default List<MemoryItem> findConsolidationCandidates(float[] vector, float minScore) {
+        return search(vector, 1, minScore);
+    }
+
     /**
      * 保存/更新一条记忆（含向量）
      *

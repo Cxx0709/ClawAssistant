@@ -4,6 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
+import com.youkeda.exercise.claw.identity.UserExecutionContext;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 import java.time.Instant;
 import java.util.Comparator;
@@ -31,6 +34,8 @@ public class LongTermMemoryService {
     private final MemoryWriteCoordinator writeCoordinator;
     private final MemoryEvictionService evictionService;
     private final Executor memoryTaskExecutor;
+    private final UserExecutionContext userContext;
+    private final MemoryChangeStore changes;
 
     public LongTermMemoryService(LongTermMemoryProperties props,
                                   MemoryExtractor extractor,
@@ -40,7 +45,8 @@ public class LongTermMemoryService {
                                   MemoryConsolidator consolidator,
                                   MemoryWriteCoordinator writeCoordinator,
                                   MemoryEvictionService evictionService,
-                                  @Qualifier("memoryTaskExecutor") Executor memoryTaskExecutor) {
+                                  @Qualifier("memoryTaskExecutor") Executor memoryTaskExecutor,
+                                  UserExecutionContext userContext, MemoryChangeStore changes) {
         this.props = props;
         this.extractor = extractor;
         this.embeddingClient = embeddingClient;
@@ -50,6 +56,8 @@ public class LongTermMemoryService {
         this.writeCoordinator = writeCoordinator;
         this.evictionService = evictionService;
         this.memoryTaskExecutor = memoryTaskExecutor;
+        this.userContext = userContext;
+        this.changes = changes;
     }
 
     // ==================== Recall：根据当前消息召回相关记忆 ====================
@@ -71,6 +79,7 @@ public class LongTermMemoryService {
             List<MemoryItem> results = memoryStore.searchScored(
                             queryVector, candidateLimit, props.getRecallMinScore())
                     .stream()
+                    .filter(result -> !result.item().disabled())
                     .sorted(Comparator.comparingDouble(this::recallScore).reversed())
                     .limit(topK)
                     .map(MemorySearchResult::item)
@@ -122,7 +131,7 @@ public class LongTermMemoryService {
 
             // 写后容量检查（Phase 4）：超限则淘汰最弱记忆（本方法已在异步线程内）
             try {
-                evictionService.evictIfOverCapacity();
+                writeCoordinator.withTopicLock("memory-write", evictionService::evictIfOverCapacity);
             } catch (Exception e) {
                 log.warn("记忆淘汰检查失败 | error={}", e.getMessage());
             }
@@ -132,6 +141,7 @@ public class LongTermMemoryService {
     }
 
     private void processExtractedItem(MemoryItem item) {
+        item = item.withDetails(false, userContext.currentConversationIdOrNull());
         if (item.importance() < props.getImportanceThreshold()) {
             log.debug("记忆重要性不足，丢弃 | importance={} | content={}",
                     item.importance(), item.content());
@@ -184,7 +194,8 @@ public class LongTermMemoryService {
             float[] vector = embeddingClient.embed(content);
             MemoryTopicResolver.TopicResolution topic = topicResolver.resolve(category, content);
             MemoryItem item = MemoryItem.ofManual(
-                    category, topic.topicKey(), content.strip());
+                    category, topic.topicKey(), content.strip())
+                    .withDetails(false, userContext.currentConversationIdOrNull());
             StoreOutcome outcome = storeOrConsolidate(item, vector);
             log.info("手动记忆处理 | category={} | outcome={} | content={}",
                     category, outcome, content);
@@ -197,7 +208,9 @@ public class LongTermMemoryService {
 
     /** 保存用户主动记忆（指定 userId，兼容多数据源）。userId 透传至 memoryStore。 */
     public boolean saveManual(String userId, MemoryCategory category, String content) {
-        return saveManual(category, content);
+        try (var ignored = userContext.open(userId)) {
+            return saveManual(category, content);
+        }
     }
 
     // ==================== 查询与管理 ====================
@@ -211,7 +224,9 @@ public class LongTermMemoryService {
 
     /** 获取指定用户的全部记忆。userId 透传至 memoryStore。 */
     public List<MemoryItem> listAll(String userId) {
-        return memoryStore.getAll();
+        try (var ignored = userContext.open(userId)) {
+            return memoryStore.getAll();
+        }
     }
 
     /**
@@ -219,7 +234,11 @@ public class LongTermMemoryService {
      */
     public boolean delete(String memoryId) {
         try {
-            return memoryStore.delete(memoryId);
+            return writeCoordinator.withTopicLock("memory-write", () -> {
+                boolean deleted = memoryStore.delete(memoryId);
+                if (deleted) changes.forget(memoryId);
+                return deleted;
+            });
         } catch (Exception e) {
             log.error("删除记忆失败 | memoryId={}", memoryId, e);
             return false;
@@ -228,7 +247,9 @@ public class LongTermMemoryService {
 
     /** 删除指定用户的记忆。userId 透传至 memoryStore。 */
     public boolean delete(String userId, String memoryId) {
-        return delete(memoryId);
+        try (var ignored = userContext.open(userId)) {
+            return delete(memoryId);
+        }
     }
 
     /**
@@ -312,33 +333,35 @@ public class LongTermMemoryService {
     private StoreOutcome storeOrConsolidate(
             MemoryItem incoming, float[] incomingVector) {
         return writeCoordinator.withTopicLock(
-                incoming.topicKey(),
+                "memory-write",
                 () -> storeOrConsolidateLocked(incoming, incomingVector));
     }
 
     private StoreOutcome storeOrConsolidateLocked(
             MemoryItem incoming, float[] incomingVector) {
         MemoryItem existing = memoryStore.findByTopicKey(incoming.topicKey());
+        if (existing != null && existing.disabled()) return StoreOutcome.UNCHANGED;
         if (existing == null) {
-            List<MemoryItem> similar = memoryStore.search(
-                    incomingVector, 1, props.getDedupSimilarity());
+            List<MemoryItem> similar = memoryStore.findConsolidationCandidates(
+                    incomingVector, props.getDedupSimilarity());
             existing = similar.isEmpty() ? null : similar.get(0);
         }
+        if (existing != null && existing.disabled()) return StoreOutcome.UNCHANGED;
         if (existing == null) {
-            return memoryStore.upsert(incoming, incomingVector)
+            return persistChange(null, incoming, incomingVector)
                     ? StoreOutcome.ADDED : StoreOutcome.FAILED;
         }
 
         if (!existing.topicKey().isBlank() && !incoming.topicKey().isBlank()
                 && !existing.topicKey().equals(incoming.topicKey())) {
-            return memoryStore.upsert(incoming, incomingVector)
+            return persistChange(null, incoming, incomingVector)
                     ? StoreOutcome.ADDED : StoreOutcome.FAILED;
         }
 
         MemoryMergeDecision decision = consolidator.decide(existing, incoming);
         return switch (decision.action()) {
             case DUPLICATE -> StoreOutcome.UNCHANGED;
-            case ADD -> memoryStore.upsert(incoming, incomingVector)
+            case ADD -> persistChange(null, incoming, incomingVector)
                     ? StoreOutcome.ADDED : StoreOutcome.FAILED;
             case UPDATE, MERGE -> persistResolved(
                     existing, incoming, incomingVector, decision);
@@ -354,7 +377,7 @@ public class LongTermMemoryService {
                 ? incomingVector : embeddingClient.embed(resolvedContent);
         MemoryItem resolved = existing.withResolvedContent(
                 incoming, resolvedContent, decision.action());
-        if (!memoryStore.upsert(resolved, resolvedVector)) return StoreOutcome.FAILED;
+        if (!persistChange(existing, resolved, resolvedVector)) return StoreOutcome.FAILED;
         return decision.action() == MemoryMergeAction.MERGE
                 ? StoreOutcome.MERGED : StoreOutcome.UPDATED;
     }
@@ -368,6 +391,91 @@ public class LongTermMemoryService {
 
     private enum StoreOutcome {
         ADDED, UPDATED, MERGED, UNCHANGED, FAILED
+    }
+
+    private boolean persistChange(MemoryItem before, MemoryItem after, float[] vector) {
+        if (!memoryStore.upsert(after, vector)) return false;
+        try { changes.record(before, after); }
+        catch (Exception e) { log.error("记忆已保存，但变更提示记录失败 | id={}", after.id(), e); }
+        return true;
+    }
+
+    public MemoryItem createManaged(MemoryCategory category, String content) {
+        requireEnabled();
+        return writeCoordinator.withTopicLock("memory-write", () -> {
+            MemoryItem item = MemoryItem.ofManual(category, topicResolver.resolve(category, content).topicKey(), content);
+            if (!persistChange(null, item, embeddingClient.embed(item.content()))) throw unavailable();
+            return item;
+        });
+    }
+
+    public MemoryItem updateManaged(String id, MemoryCategory category, String content,
+                                    boolean disabled, Instant expectedUpdatedAt) {
+        requireEnabled();
+        return writeCoordinator.withTopicLock("memory-write", () -> {
+            MemoryItem before = requireMemory(id);
+            checkVersion(before, expectedUpdatedAt);
+            boolean edited = !before.content().equals(content) || before.category() != category;
+            String topicKey = edited ? topicResolver.resolve(category, content).topicKey() : before.topicKey();
+            MemoryItem after = new MemoryItem(id, category, topicKey, content,
+                    edited ? content : before.evidence(), edited ? 1f : before.importance(),
+                    edited ? 1f : before.confidence(),
+                    edited ? MemorySource.MANUAL : before.source(), before.createdAt(), before.nextUpdateTime(),
+                    before.hitCount(), disabled, edited ? null : before.sourceConversationId());
+            if (!persistChange(before, after, embeddingClient.embed(content))) throw unavailable();
+            return after;
+        });
+    }
+
+    public void deleteManaged(String id, Instant expectedUpdatedAt) {
+        writeCoordinator.withTopicLock("memory-write", () -> {
+            checkVersion(requireMemory(id), expectedUpdatedAt);
+            if (!delete(id)) throw unavailable();
+            return null;
+        });
+    }
+
+    public void undoManaged(long changeId) {
+        requireEnabled();
+        writeCoordinator.withTopicLock("memory-write", () -> {
+            MemoryChangeStore.Change change = changes.find(changeId);
+            if (change == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "这条变更已撤销或已过期");
+            MemoryItem current = requireMemory(change.after().id());
+            checkVersion(current, change.after().updatedAt());
+            if (change.before() == null) {
+                if (!memoryStore.delete(current.id())) throw unavailable();
+            } else {
+                MemoryItem previous = change.before();
+                MemoryItem restored = new MemoryItem(previous.id(), previous.category(), previous.topicKey(),
+                        previous.content(), previous.evidence(), previous.importance(), previous.confidence(),
+                        previous.source(), previous.createdAt(), current.nextUpdateTime(), previous.hitCount(),
+                        previous.disabled(), previous.sourceConversationId());
+                if (!memoryStore.upsert(restored, embeddingClient.embed(restored.content()))) throw unavailable();
+            }
+            changes.forget(current.id());
+            return null;
+        });
+    }
+
+    public boolean isEnabled() { return props.isEnabled(); }
+
+    private MemoryItem requireMemory(String id) {
+        return memoryStore.getAll().stream().filter(item -> item.id().equals(id)).findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "记忆不存在"));
+    }
+
+    private void checkVersion(MemoryItem item, Instant expected) {
+        if (expected == null || item.updatedAt().toEpochMilli() != expected.toEpochMilli()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "这条记忆已更新，请刷新后重试");
+        }
+    }
+
+    private void requireEnabled() {
+        if (!props.isEnabled()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "长期记忆功能尚未启用");
+    }
+
+    private ResponseStatusException unavailable() {
+        return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "记忆保存失败，请稍后重试");
     }
 
     // ==================== 工具方法 ====================

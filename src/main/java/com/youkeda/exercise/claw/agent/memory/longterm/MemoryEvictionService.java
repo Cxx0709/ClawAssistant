@@ -2,7 +2,6 @@ package com.youkeda.exercise.claw.agent.memory.longterm;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -39,7 +38,6 @@ public class MemoryEvictionService {
      * 每天定时淘汰：质量分淘汰 + 容量兜底。
      * 由 {@code memory.eviction-cron} 配置（默认凌晨 3 点）。
      */
-    @Scheduled(cron = "${memory.eviction-cron:0 0 3 * * *}")
     public void scheduledEviction() {
         log.info("记忆定时淘汰开始");
         evictBelowThreshold();

@@ -354,6 +354,21 @@ public class SkillRouter {
                     "continuation of " + session.activeSkill());
         }
 
+        // 天气查询结束后，明确的新搜索请求不应被低置信度续接保护留在天气技能。
+        // 不含查询动作的省略追问（如「明天呢」）仍使用原有续接机制。
+        if ("weather".equals(session.activeSkill())
+                && message.matches("(?s).*(?:搜索|查找|搜一下|搜一搜|帮我找|找一下).+")) {
+            return SkillRoutingResult.of("common", Set.of(),
+                    SkillRoutingResult.SkillRoutingAction.DEACTIVATE, 1.0,
+                    "new search request outside weather");
+        }
+
+        if ("campus".equals(session.activeSkill()) && CampusTriggerPolicy.isOutsideScope(message)) {
+            return SkillRoutingResult.of("common", Set.of(),
+                    SkillRoutingResult.SkillRoutingAction.DEACTIVATE, 1.0,
+                    "request outside personal timetable management");
+        }
+
         // 低置信度续接保护：当前消息与 activeSkill 弱关联/无关。
         // 第一次低置信度先 CONTINUE 计数（inactivityCount+1），继续维持旧 skill，
         // 避免「估价后追问校区/车型」这类多轮澄清被误判为无关而中断；

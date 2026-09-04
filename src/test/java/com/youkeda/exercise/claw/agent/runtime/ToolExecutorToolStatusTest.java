@@ -63,7 +63,7 @@ class ToolExecutorToolStatusTest {
                 registry, allowAll, mock(SkillPendingCoordinator.class),
                 mock(PendingToolCoordinator.class),
                 mock(AgentActivityRecorder.class), new ToolResultStatusParser(om),
-                mock(PlanStore.class), om);
+                mock(PlanStore.class), om, mock(com.youkeda.exercise.claw.skill.SkillRegistry.class));
 
         LLMResponse.ToolCall callOk = new LLMResponse.ToolCall("c1", "weather_query", "{}");
         LLMResponse.ToolCall callBlocked = new LLMResponse.ToolCall("c2", "didi_ride", "{}");
@@ -96,7 +96,7 @@ class ToolExecutorToolStatusTest {
                 registry, blocking, mock(SkillPendingCoordinator.class),
                 mock(PendingToolCoordinator.class),
                 mock(AgentActivityRecorder.class), new ToolResultStatusParser(om),
-                mock(PlanStore.class), om);
+                mock(PlanStore.class), om, mock(com.youkeda.exercise.claw.skill.SkillRegistry.class));
 
         LLMResponse.ToolCall call = new LLMResponse.ToolCall("c1", "weather_query", "{}");
         ToolExecutor.ToolExecutionBatch batch = executor.executeToolCalls(
@@ -121,7 +121,7 @@ class ToolExecutorToolStatusTest {
                 registry, allowAll, mock(SkillPendingCoordinator.class),
                 mock(PendingToolCoordinator.class),
                 mock(AgentActivityRecorder.class), new ToolResultStatusParser(om),
-                mock(PlanStore.class), om);
+                mock(PlanStore.class), om, mock(com.youkeda.exercise.claw.skill.SkillRegistry.class));
 
         // 同一工具 + 相同参数执行两次：第一次成功，第二次被去重为 BLOCKED
         LLMResponse.ToolCall call = new LLMResponse.ToolCall("c1", "weather_query", "{}");
@@ -152,7 +152,7 @@ class ToolExecutorToolStatusTest {
         ToolExecutor executor = new ToolExecutor(
                 registry, allowAll, mock(SkillPendingCoordinator.class),
                 mock(PendingToolCoordinator.class), mock(AgentActivityRecorder.class),
-                new ToolResultStatusParser(om), mock(PlanStore.class), om);
+                new ToolResultStatusParser(om), mock(PlanStore.class), om, mock(com.youkeda.exercise.claw.skill.SkillRegistry.class));
         Set<String> executedCalls = new HashSet<>();
 
         ToolExecutor.ToolExecutionBatch first = executor.executeToolCalls(
@@ -178,7 +178,7 @@ class ToolExecutorToolStatusTest {
                 registry, allowAll, mock(SkillPendingCoordinator.class),
                 mock(PendingToolCoordinator.class),
                 mock(AgentActivityRecorder.class), new ToolResultStatusParser(om),
-                mock(PlanStore.class), om);
+                mock(PlanStore.class), om, mock(com.youkeda.exercise.claw.skill.SkillRegistry.class));
 
         LLMResponse.ToolCall call = new LLMResponse.ToolCall("c1", "no_such_tool", "{}");
         ToolExecutor.ToolExecutionBatch batch = executor.executeToolCalls(

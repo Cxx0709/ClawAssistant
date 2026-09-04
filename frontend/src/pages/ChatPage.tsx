@@ -4,6 +4,10 @@ import Markdown from '../components/Markdown';
 import RightRail from '../components/RightRail';
 import ToolTrace from '../components/ToolTrace';
 import ConversationSidebar from '../components/ConversationSidebar';
+import Composer from '../components/Composer';
+import MemoryNotice from '../components/MemoryNotice';
+import { getMemories } from '../lib/memories';
+import { useAttachments } from '../lib/useAttachments';
 import {
   createConversation,
   deleteConversation,
@@ -16,7 +20,6 @@ import {
   fetchStatus,
   purgeConversation,
   updateConversation,
-  uploadArtifact,
 } from '../lib/api';
 import { consumeStream } from '../lib/sse';
 import type { AppUser, Artifact, ChatMsg, Conversation, StreamEvent, SystemStatus } from '../lib/types';
@@ -39,13 +42,11 @@ export default function ChatPage({ onHome, user, onLogout }: {
   const [railOpen, setRailOpen] = useState(false);
   const [railToken, setRailToken] = useState(0);
   const [status, setStatus] = useState<SystemStatus | null>(null);
-  const [attachments, setAttachments] = useState<Artifact[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState('');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [archivedConversations, setArchivedConversations] = useState<Conversation[]>([]);
   const [deletedConversations, setDeletedConversations] = useState<Conversation[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const { queue, drafts, attachments, uploading, hasFailed, uploadError } = useAttachments(conversationId);
   const [conversationsLoading, setConversationsLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
@@ -63,6 +64,19 @@ export default function ChatPage({ onHome, user, onLogout }: {
   const scrollFrameRef = useRef<number | null>(null);
   const textBufferRef = useRef('');
   const textFlushTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const memoryId = new URLSearchParams(window.location.search).get('memory');
+    if (!memoryId) return;
+    let alive = true;
+    getMemories().then(data => {
+      if (!alive) return;
+      const memory = data.items.find(item => item.id === memoryId && !item.disabled);
+      if (memory) setText(`结合这条关于我的信息：“${memory.content}”，请帮我`);
+      else setHistoryError('这条记忆已删除或停用，请从“我的记忆”重新选择');
+    }).catch((reason: Error) => { if (alive) setHistoryError(reason.message); });
+    return () => { alive = false; };
+  }, []);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     const el = scrollRef.current;
@@ -106,7 +120,11 @@ export default function ChatPage({ onHome, user, onLogout }: {
         setArchivedConversations(archivedItems);
         setDeletedConversations(deletedItems);
         const requested = new URLSearchParams(window.location.search).get('conversation');
-        setConversationId(items.some((item) => item.id === requested) ? requested : items[0].id);
+        if (requested && ![...items, ...archivedItems].some(item => item.id === requested)) {
+          setHistoryError('来源对话不存在或已删除，请从左侧选择其他对话');
+        } else {
+          setConversationId(requested || items[0].id);
+        }
       } catch (reason) {
         if (alive) setHistoryError((reason as Error)?.message || '无法读取历史对话');
       } finally {
@@ -476,10 +494,10 @@ export default function ChatPage({ onHome, user, onLogout }: {
     (raw: string) => {
       const content = raw.trim();
       if ((!content && attachments.length === 0) || busy || uploading || !conversationId || historyLoading) return;
-      const selectedAttachments = attachments;
+      const selectedAttachments = queue.ready(conversationId);
+      if (!selectedAttachments) return;
       setText('');
-      setAttachments([]);
-      setUploadError('');
+      queue.clear(conversationId);
 
       seqRef.current += 1;
       const uid = `u${seqRef.current}`;
@@ -523,22 +541,13 @@ export default function ChatPage({ onHome, user, onLogout }: {
           streamIdRef.current = null;
         });
     },
-    [attachments, busy, conversationId, handleEvent, historyLoading, patchStream, refreshRail, takeBufferedText, uploading],
+    [attachments, busy, conversationId, handleEvent, historyLoading, patchStream, queue, refreshRail, takeBufferedText, uploading],
   );
 
-  const uploadFiles = useCallback(async (files: FileList | null) => {
-    if (!files?.length || busy) return;
-    setUploading(true);
-    setUploadError('');
-    try {
-      const uploaded = await Promise.all(Array.from(files).map(uploadArtifact));
-      setAttachments((current) => [...current, ...uploaded]);
-    } catch (reason) {
-      setUploadError((reason as Error)?.message || '附件上传失败');
-    } finally {
-      setUploading(false);
-    }
-  }, [busy]);
+  const uploadFiles = useCallback((files: File[]) => {
+    if (!files.length || busy || !conversationId || historyLoading) return;
+    queue.add(conversationId, files);
+  }, [busy, conversationId, historyLoading, queue]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -549,7 +558,7 @@ export default function ChatPage({ onHome, user, onLogout }: {
   return (
     <div className="flex h-dvh flex-col bg-canvas text-ink">
       {/* ===== 顶栏 ===== */}
-      <header className="flex h-[58px] shrink-0 items-center gap-3 border-b border-line px-3 sm:px-4">
+      <header className="flex h-[58px] shrink-0 items-center gap-1 border-b border-line px-3 sm:gap-3 sm:px-4">
         <button
           type="button"
           onClick={() => setHistoryOpen((value) => !value)}
@@ -572,7 +581,7 @@ export default function ChatPage({ onHome, user, onLogout }: {
 
         <div className="flex items-center gap-2.5">
           <BrandMark size={28} />
-          <div className="leading-tight">
+          <div className="hidden leading-tight sm:block">
             <p className="text-[13.5px] font-semibold">Claw Assistant</p>
             <p className="flex items-center gap-1 text-[11px] text-ink-faint">
               <span className={`inline-block h-1.5 w-1.5 rounded-full ${connected ? 'bg-[#34c759]' : 'bg-ink-faint'}`} />
@@ -581,28 +590,44 @@ export default function ChatPage({ onHome, user, onLogout }: {
           </div>
         </div>
 
-        <p className="absolute left-1/2 hidden max-w-[32vw] -translate-x-1/2 truncate text-[13px] font-medium text-ink-soft md:block">
+        <p className="absolute left-1/2 hidden max-w-[24vw] -translate-x-1/2 truncate text-[13px] font-medium text-ink-soft xl:block">
           {conversations.find((item) => item.id === conversationId)?.title || '新对话'}
         </p>
 
-        <span className="ml-auto hidden text-xs text-ink-faint sm:inline">{user.displayName}</span>
-        <button
-          type="button"
-          onClick={() => setRailOpen((v) => !v)}
-          aria-pressed={railOpen}
-          className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[12.5px] font-medium transition-colors ${
-            railOpen
-              ? 'border-brand/30 bg-brand-dim text-brand-deep'
-              : 'border-line text-ink-soft hover:bg-canvas-sub hover:text-ink'
-          }`}
-        >
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="4" width="18" height="16" rx="2.5" />
-            <path d="M9 4v16M3 9h6M3 14h6" />
-          </svg>
-          信息
-        </button>
-        <button type="button" onClick={onLogout} className="h-9 px-2 text-xs text-ink-faint hover:text-ink">退出</button>
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-3">
+          <span className="hidden max-w-24 truncate text-xs text-ink-faint lg:inline">{user.displayName}</span>
+          <a
+            href="?memories"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="我的记忆（在新标签页打开）"
+            aria-label="我的记忆（在新标签页打开）"
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-line px-2 text-[12.5px] font-medium text-ink-soft transition-colors hover:bg-canvas-sub hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand sm:px-3"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <ellipse cx="12" cy="5" rx="8" ry="3" />
+              <path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7" />
+            </svg>
+            <span className="hidden sm:inline">我的记忆</span>
+          </a>
+          <button
+            type="button"
+            onClick={() => setRailOpen((v) => !v)}
+            aria-pressed={railOpen}
+            className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[12.5px] font-medium transition-colors ${
+              railOpen
+                ? 'border-brand/30 bg-brand-dim text-brand-deep'
+                : 'border-line text-ink-soft hover:bg-canvas-sub hover:text-ink'
+            }`}
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2.5" />
+              <path d="M9 4v16M3 9h6M3 14h6" />
+            </svg>
+            信息
+          </button>
+          <button type="button" onClick={onLogout} className="h-9 px-2 text-xs text-ink-faint hover:text-ink">退出</button>
+        </div>
       </header>
 
       {/* ===== 主体 ===== */}
@@ -680,17 +705,22 @@ export default function ChatPage({ onHome, user, onLogout }: {
           {/* 输入区 */}
           <div className="shrink-0 border-t border-line/70 bg-gradient-to-t from-canvas via-canvas to-canvas/90 pb-3 pt-3">
             <div className="mx-auto w-full max-w-[760px] px-4 sm:px-6">
+              <MemoryNotice conversationId={conversationId} refreshToken={railToken} />
               <Composer
+                key={conversationId}
                 text={text}
                 busy={busy}
+                disabled={!conversationId || historyLoading}
                 onChange={setText}
                 onSend={() => send(text)}
                 onStop={stop}
-                attachments={attachments}
+                attachments={drafts}
                 uploading={uploading}
+                hasFailed={hasFailed}
                 uploadError={uploadError}
                 onFiles={uploadFiles}
-                onRemove={(id) => setAttachments((items) => items.filter((item) => item.id !== id))}
+                onRemove={(id) => queue.remove(id)}
+                onRetry={(id) => queue.retry(id)}
               />
               <p className="mt-2 text-center text-[11px] text-ink-faint">
                 Claw 也会犯错，重要信息请以官方渠道为准
@@ -843,119 +873,6 @@ function TypingDots() {
         />
       ))}
       <span className="ml-1 text-xs text-ink-faint">思考中…</span>
-    </div>
-  );
-}
-
-function Composer({
-  text,
-  busy,
-  onChange,
-  onSend,
-  onStop,
-  attachments,
-  uploading,
-  uploadError,
-  onFiles,
-  onRemove,
-}: {
-  text: string;
-  busy: boolean;
-  onChange: (v: string) => void;
-  onSend: () => void;
-  onStop: () => void;
-  attachments: Artifact[];
-  uploading: boolean;
-  uploadError: string;
-  onFiles: (files: FileList | null) => void;
-  onRemove: (id: string) => void;
-}) {
-  const ref = useRef<HTMLTextAreaElement | null>(null);
-  const fileRef = useRef<HTMLInputElement | null>(null);
-  const canSend = (text.trim().length > 0 || attachments.length > 0) && !uploading;
-
-  const autoGrow = () => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      if (!busy && canSend) onSend();
-    }
-  };
-
-  return (
-    <div className="rounded-[24px] border border-line bg-white p-1.5 shadow-composer transition-shadow focus-within:border-brand/50 focus-within:shadow-pop">
-      {attachments.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 px-2 pb-1.5 pt-1">
-          {attachments.map((item) => (
-            <span key={item.id} className="flex max-w-[230px] items-center gap-1.5 rounded-lg bg-canvas-sub px-2 py-1 text-xs text-ink-soft">
-              <span className="truncate">{item.fileName}</span>
-              <button type="button" onClick={() => onRemove(item.id)} className="text-ink-faint hover:text-ink" aria-label={`移除 ${item.fileName}`}>×</button>
-            </span>
-          ))}
-        </div>
-      )}
-      {uploadError && <p className="px-3 pb-1 text-xs text-[#c0392b]">{uploadError}</p>}
-      <div className="flex items-end gap-1.5">
-      <input
-        ref={fileRef}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={(event) => { onFiles(event.target.files); event.target.value = ''; }}
-      />
-      <button
-        type="button"
-        onClick={() => fileRef.current?.click()}
-        disabled={busy || uploading}
-        title="添加图片、语音或文件"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-ink-soft transition hover:bg-canvas-sub disabled:opacity-40"
-      >
-        {uploading ? '…' : '+'}
-      </button>
-      <textarea
-        ref={ref}
-        rows={1}
-        value={text}
-        placeholder={busy ? 'Agent 正在处理…' : '给 Claw 发消息…'}
-        onChange={(e) => {
-          onChange(e.target.value);
-          autoGrow();
-        }}
-        onKeyDown={onKeyDown}
-        disabled={busy}
-        className="max-h-[160px] min-w-0 flex-1 resize-none bg-transparent py-[7px] text-[14.5px] leading-relaxed text-ink outline-none placeholder:text-ink-faint disabled:opacity-60"
-      />
-      {busy ? (
-        <button
-          type="button"
-          onClick={onStop}
-          title="停止生成"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line bg-white text-ink-soft transition-colors hover:border-[#e5484d]/40 hover:text-[#e5484d]"
-        >
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
-            <rect x="7" y="7" width="10" height="10" rx="1.6" />
-          </svg>
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={onSend}
-          disabled={!canSend}
-          title="发送"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand text-white transition-all enabled:hover:bg-brand-deep disabled:opacity-35"
-        >
-          <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 19V5M6 11l6-6 6 6" />
-          </svg>
-        </button>
-      )}
-      </div>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,6 +20,8 @@ public class SkillRegistry {
     private final Map<String, SkillDefinition> skills = new ConcurrentHashMap<>();
     private final Map<String, SkillDefinition> dynamicSkills = new ConcurrentHashMap<>();
     private final Map<String, SkillHealth> healthCache = new ConcurrentHashMap<>();
+    /** 工具名 → 所属 skill 名。由 {@link #init()} 从 skills.yml 构建。 */
+    private final Map<String, String> toolSkillMap = new ConcurrentHashMap<>();
     private final SkillsProperties properties;
     private final ToolRegistry functionRegistry;
     private Set<String> registeredToolNames;
@@ -30,6 +33,7 @@ public class SkillRegistry {
     }
 
     @EventListener(ApplicationReadyEvent.class)
+    @Order(0)
     public void init() {
         // Collect registered tool names at PostConstruct time, AFTER all
         // Tool implementations have registered themselves.
@@ -44,9 +48,22 @@ public class SkillRegistry {
             healthCache.put(name, health);
             if (health.status() != SkillHealth.SkillStatus.UNAVAILABLE) {
                 skills.put(name, def);
+                // 构建 tool→skill 映射（ToolSkillResolver）
+                for (String tool : def.allowedTools()) {
+                    toolSkillMap.putIfAbsent(tool, name);
+                }
             }
             log.info("Skill [{}]: {}", name, health.status());
         });
+        log.info("ToolSkillResolver 映射已构建 | toolCount={}", toolSkillMap.size());
+    }
+
+    /**
+     * 根据工具名查找其所属的 skill 名（ToolSkillResolver）。
+     * 工具执行完成后，用此映射自动锁定 activeSkill。
+     */
+    public String resolveSkillForTool(String toolName) {
+        return toolSkillMap.get(toolName);
     }
 
     private SkillDefinition withName(String name, SkillDefinition def) {

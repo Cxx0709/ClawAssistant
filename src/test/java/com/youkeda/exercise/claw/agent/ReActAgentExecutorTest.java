@@ -217,7 +217,7 @@ class ReActAgentExecutorTest {
                 registry, safetyPolicy, mock(SkillPendingCoordinator.class),
                 mock(PendingToolCoordinator.class),
                 mock(AgentActivityRecorder.class), mock(ToolResultStatusParser.class),
-                planStore, objectMapper);
+                planStore, objectMapper, mock(com.youkeda.exercise.claw.skill.SkillRegistry.class));
         ExecutionLoop executionLoop = new ExecutionLoop(
                 llmClient, toolExecutor, planStore, planValidator, objectMapper,
                 java.util.List.of(),

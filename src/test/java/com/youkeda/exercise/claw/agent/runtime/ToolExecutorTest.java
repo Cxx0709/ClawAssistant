@@ -40,7 +40,7 @@ class ToolExecutorTest {
     private final ToolExecutor executor = new ToolExecutor(
             registry, safetyPolicy, mock(SkillPendingCoordinator.class),
             mock(PendingToolCoordinator.class),
-            mock(AgentActivityRecorder.class), statusParser, planStore, new ObjectMapper());
+            mock(AgentActivityRecorder.class), statusParser, planStore, new ObjectMapper(), mock(com.youkeda.exercise.claw.skill.SkillRegistry.class));
 
     private final ToolExecutionBatchRunner runner = new ToolExecutionBatchRunner();
 

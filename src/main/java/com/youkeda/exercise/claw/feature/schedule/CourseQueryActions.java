@@ -8,6 +8,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.util.Objects;
 
 /**
  * 课表查询与单课管理操作。
@@ -31,6 +34,7 @@ public class CourseQueryActions {
     private final CourseMessageFormatter messageFormatter;
     private final ObjectMapper objectMapper;
     private final CourseImportStateManager importStateManager;
+    private final ScheduleReminderService reminderService;
 
     public CourseQueryActions(CourseService courseService,
                               CourseRepository courseRepository,
@@ -38,7 +42,8 @@ public class CourseQueryActions {
                               SemesterService semesterService,
                               CourseMessageFormatter messageFormatter,
                               ObjectMapper objectMapper,
-                              CourseImportStateManager importStateManager) {
+                              CourseImportStateManager importStateManager,
+                              ScheduleReminderService reminderService) {
         this.courseService = courseService;
         this.courseRepository = courseRepository;
         this.semesterConfig = semesterConfig;
@@ -46,31 +51,43 @@ public class CourseQueryActions {
         this.messageFormatter = messageFormatter;
         this.objectMapper = objectMapper;
         this.importStateManager = importStateManager;
+        this.reminderService = reminderService;
+    }
+
+    public String handleQueryDate(JsonNode args, String userId) {
+        try {
+            String dateText = args.path("date").asText("");
+            if (!dateText.matches("\\d{4}-\\d{2}-\\d{2}")) return errorJson("请提供具体日期 date（yyyy-MM-dd），例如先将明天换算为日期");
+            return queryDate(userId, LocalDate.parse(dateText), "query_date");
+        } catch (DateTimeParseException exception) {
+            return errorJson("日期无效，请使用真实日历日期（yyyy-MM-dd）");
+        }
+    }
+
+    private String queryDate(String userId, LocalDate date, String action) {
+        CourseService.DateCourses schedule = courseService.getCoursesOnDate(userId, date);
+        String message = !schedule.calendarConfigured() ? "请先设置学期第一周的起始日期，才能准确查询课程"
+                : schedule.week() <= 0 ? "该日期对应的学期尚未开始"
+                : date + "（" + DAY_NAMES[date.getDayOfWeek().getValue()] + "）共 " + schedule.courses().size() + " 条课程安排";
+        try {
+            ObjectNode result = (ObjectNode) objectMapper.readTree(buildQueryResult(action, schedule.courses(), message, schedule.week()));
+            result.put("date", date.toString());
+            result.put("status", schedule.calendarConfigured() ? "success" : "needs_semester");
+            result.put("semester_id", schedule.semesterId());
+            return result.toString();
+        } catch (java.io.IOException exception) {
+            throw new IllegalStateException(exception);
+        }
+    }
+
+    public String handleReminderStatus(String userId) {
+        ObjectNode result = objectMapper.valueToTree(reminderService.getStatus(userId));
+        result.put("action", "query_reminder_status");
+        return result.toString();
     }
 
     public String handleQueryToday(String userId) {
-        int currentWeek = resolveCurrentWeek(userId);
-        if (currentWeek <= 0) {
-            return buildQueryResult("query_today", List.of(),
-                    "学期尚未开始（当前日期早于学期起始日）", currentWeek);
-        }
-
-        List<CourseEntity> todayCourses = courseService.getTodayCourses(userId);
-
-        if (todayCourses.isEmpty()) {
-            List<CourseEntity> allDayCourses = courseRepository.findByUserIdAndDay(
-                    userId, semesterService.getCurrentDayOfWeek());
-            if (allDayCourses.isEmpty()) {
-                return buildQueryResult("query_today", List.of(),
-                        "今天没有安排课程，好好休息吧！😊", currentWeek);
-            } else {
-                return buildQueryResult("query_today", List.of(),
-                        "今天虽然有课，但不在当前教学周，所以没有课程安排。当前是第 " + currentWeek + " 周。", currentWeek);
-            }
-        }
-
-        return buildQueryResult("query_today", todayCourses,
-                "今日课程共 " + todayCourses.size() + " 门", currentWeek);
+        return queryDate(userId, LocalDate.now(), "query_today");
     }
 
     public String handleQueryFreeTime(String userId) {
@@ -111,15 +128,8 @@ public class CourseQueryActions {
             return "{\"error\":\"无效的 day_of_week 参数，请输入 1（周一）~ 7（周日）\"}";
         }
 
-        int currentWeek = resolveCurrentWeek(userId);
-        if (currentWeek <= 0) {
-            return buildQueryResult("query_weekday", List.of(),
-                    "学期尚未开始", currentWeek);
-        }
-
-        List<CourseEntity> courses = courseService.getCoursesByDay(userId, dayOfWeek);
-        return buildQueryResult("query_weekday", courses,
-                DAY_NAMES[dayOfWeek] + "共 " + courses.size() + " 门课", currentWeek);
+        LocalDate date = LocalDate.now().with(java.time.DayOfWeek.of(dayOfWeek));
+        return queryDate(userId, date, "query_weekday");
     }
 
     public String handleDelete(JsonNode args, String userId) {
@@ -159,7 +169,18 @@ public class CourseQueryActions {
             return "{\"action\":\"update\",\"status\":\"error\",\"message\":\"无权修改该课程\"}";
         }
 
+        ObjectNode before = courseDetails(existing);
+        CourseEntity original = existing;
+        existing = new CourseEntity(userId, original.getCourseName(), original.getTeacher(),
+                original.getDayOfWeek(), original.getStartPeriod(), original.getEndPeriod(), original.getClassroom(),
+                original.getStartWeek(), original.getEndWeek(), original.getWeekType());
+        existing.setId(original.getId());
+        existing.setSemesterId(original.getSemesterId());
+
         JsonNode coursesNode = args.get("courses");
+        if (coursesNode == null || !coursesNode.isArray() || coursesNode.size() != 1 || !coursesNode.get(0).isObject() || coursesNode.get(0).isEmpty()) {
+            return errorJson("请在 courses 中提供一条待修改记录的具体字段；按 course_id 修改，不按课程名覆盖");
+        }
         if (coursesNode != null && coursesNode.isArray() && !coursesNode.isEmpty()) {
             JsonNode updateSrc = coursesNode.get(0);
             if (updateSrc.has("course_name")) existing.setCourseName(updateSrc.get("course_name").asText());
@@ -173,6 +194,28 @@ public class CourseQueryActions {
             if (updateSrc.has("week_type")) existing.setWeekType(updateSrc.get("week_type").asText());
         }
 
+        if (existing.getCourseName() == null || existing.getCourseName().isBlank()
+                || existing.getDayOfWeek() < 1 || existing.getDayOfWeek() > 7
+                || existing.getStartPeriod() < 1 || existing.getEndPeriod() < existing.getStartPeriod()
+                || existing.getEndPeriod() > 30 || existing.getStartWeek() < 1
+                || existing.getEndWeek() < existing.getStartWeek() || existing.getEndWeek() > 60
+                || !List.of("ALL", "ODD", "EVEN").contains(existing.getWeekType())) {
+            return errorJson("课程数据无效：需有名称，星期为1–7，节次为1–30且起止有序，周次为1–60且起止有序，单双周为ALL/ODD/EVEN");
+        }
+        CourseEntity candidate = existing;
+        List<CourseEntity> conflicts = courseService.getAllCourses(userId).stream()
+                .filter(course -> !Objects.equals(course.getId(), candidate.getId()))
+                .filter(course -> Objects.equals(course.getSemesterId(), candidate.getSemesterId()))
+                .filter(course -> CourseService.isTimeConflict(course, candidate)).toList();
+        if (!conflicts.isEmpty()) {
+            ObjectNode conflict = objectMapper.createObjectNode();
+            conflict.put("action", "update");
+            conflict.put("status", "conflict");
+            conflict.put("message", "修改后与同学期其他课程冲突，尚未保存，请调整时间");
+            var rows = conflict.putArray("conflicts");
+            conflicts.forEach(course -> rows.add(courseDetails(course)));
+            return conflict.toString();
+        }
         boolean updated = courseService.updateCourse(existing);
         if (updated) {
             ObjectNode result = objectMapper.createObjectNode();
@@ -183,6 +226,10 @@ public class CourseQueryActions {
             result.put("day", existing.getDayDisplay());
             result.put("period", existing.getPeriodDisplay());
             result.put("weeks", existing.getWeekDisplay());
+            result.set("before", before);
+            result.set("after", courseDetails(existing));
+            result.set("reminder", objectMapper.valueToTree(reminderService.getStatus(userId)));
+            result.put("reminder_sync", "后续扫描会读取更新后的课表，无需重复创建提醒任务");
             result.put("message", "已更新课程「" + existing.getCourseName() + "」");
             return result.toString();
         }
@@ -210,6 +257,8 @@ public class CourseQueryActions {
         var array = result.putArray("courses");
         for (CourseEntity c : courses) {
             ObjectNode item = array.addObject();
+            item.put("course_id", c.getId());
+            item.put("semester_id", c.getSemesterId());
             item.put("course_name", c.getCourseName());
             item.put("day", c.getDayDisplay());
             item.put("period", c.getPeriodDisplay());
@@ -232,6 +281,22 @@ public class CourseQueryActions {
         return result.toString();
     }
 
+    private ObjectNode courseDetails(CourseEntity course) {
+        ObjectNode result = objectMapper.createObjectNode();
+        result.put("course_id", course.getId());
+        result.put("semester_id", course.getSemesterId());
+        result.put("course_name", course.getCourseName());
+        result.put("day_of_week", course.getDayOfWeek());
+        result.put("start_period", course.getStartPeriod());
+        result.put("end_period", course.getEndPeriod());
+        result.put("classroom", course.getClassroom());
+        result.put("teacher", course.getTeacher());
+        result.put("start_week", course.getStartWeek());
+        result.put("end_week", course.getEndWeek());
+        result.put("week_type", course.getWeekType());
+        return result;
+    }
+
     /**
      * 解析用户当前教学周
      *
@@ -249,6 +314,7 @@ public class CourseQueryActions {
     private String errorJson(String message) {
         try {
             ObjectNode node = objectMapper.createObjectNode();
+            node.put("status", "error");
             node.put("error", message);
             return objectMapper.writeValueAsString(node);
         } catch (Exception e) {

@@ -59,6 +59,10 @@ public class ScheduleTimeResolver {
 
     // ==================== 核心解析方法 ====================
 
+    public boolean hasBoundSchool(String userId) {
+        return userProfiles.getSchoolId(userId) != null;
+    }
+
     /**
      * 获取某节课的开始时间
      *

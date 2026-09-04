@@ -28,7 +28,8 @@ class CourseQueryActionsTest {
                 mock(SemesterService.class),
                 mock(CourseMessageFormatter.class),
                 new ObjectMapper(),
-                stateManager);
+                stateManager,
+                mock(ScheduleReminderService.class));
     }
 
     @Test

@@ -36,7 +36,7 @@ class ToolExecutionReliabilityTest {
             registry, safetyPolicy, pendingCoordinator,
             mock(PendingToolCoordinator.class),
             activityRecorder, statusParser, mock(com.youkeda.exercise.claw.agent.plan.PlanStore.class),
-            objectMapper);
+            objectMapper, mock(com.youkeda.exercise.claw.skill.SkillRegistry.class));
 
     // ==================== 1. 异常消费化：Tool 抛异常不应穿透 Agent Loop ====================
 

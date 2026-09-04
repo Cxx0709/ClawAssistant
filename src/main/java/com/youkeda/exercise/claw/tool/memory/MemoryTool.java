@@ -137,6 +137,7 @@ public class MemoryTool extends AbstractTool {
             MemoryCategory category = MemoryCategory.valueOf(categoryStr.toUpperCase());
             List<MemoryItem> all = memoryService.listAll();
             List<MemoryItem> filtered = all.stream()
+                    .filter(m -> !m.disabled())
                     .filter(m -> m.category() == category)
                     .toList();
             return buildMemoryListResult("recall", filtered);
@@ -200,6 +201,7 @@ public class MemoryTool extends AbstractTool {
                 mem.put("importance", item.importance());
                 mem.put("confidence", item.confidence());
                 mem.put("source", item.source().name());
+                mem.put("disabled", item.disabled());
             }
             result.put("message", "共有 " + memories.size() + " 条记忆");
         }

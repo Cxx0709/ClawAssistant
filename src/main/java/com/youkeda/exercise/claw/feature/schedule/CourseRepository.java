@@ -294,7 +294,7 @@ public class CourseRepository {
      *
      * @param userId 用户标识
      */
-    private List<CourseEntity> findByUserIdNullSemester(String userId) {
+    public List<CourseEntity> findByUserIdNullSemester(String userId) {
         try (Connection conn = getConnection();
              PreparedStatement ps = conn.prepareStatement(SELECT_BY_USER_NULL_SEMESTER)) {
             ps.setString(1, userId);

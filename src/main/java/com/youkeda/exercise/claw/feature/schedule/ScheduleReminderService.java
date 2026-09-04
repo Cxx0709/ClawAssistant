@@ -42,31 +42,34 @@ public class ScheduleReminderService {
 
     /** 提醒提前量：30 分钟（可通过 schedule.reminder.advance-minutes 配置） */
     @Value("${schedule.reminder.advance-minutes:30}")
-    private int reminderAdvanceMinutes;
+    private int reminderAdvanceMinutes = 30;
 
     /** 提醒窗口容差（秒）：允许提前或滞后触发（可通过 schedule.reminder.tolerance-seconds 配置） */
     @Value("${schedule.reminder.tolerance-seconds:30}")
-    private int reminderToleranceSeconds;
+    private int reminderToleranceSeconds = 30;
 
     private final CourseRepository courseRepository;
     private final SemesterConfig semesterConfig;
     private final NotificationSink notificationSink;
     private final SemesterService semesterService;
     private final ScheduleTimeResolver timeResolver;
+    private final CourseService courseService;
 
-    /** 已发送提醒的课程 ID 缓存（避免重复发送），key = userId:courseId:yyyyMMdd */
+    /** 已发送提醒缓存，key = userId:courseId:课程开始时间；改时间后可重新提醒。 */
     private final ConcurrentHashMap<String, Boolean> notifiedCache = new ConcurrentHashMap<>();
 
     public ScheduleReminderService(CourseRepository courseRepository,
                                    SemesterConfig semesterConfig,
                                    NotificationSink notificationSink,
                                    SemesterService semesterService,
-                                   ScheduleTimeResolver timeResolver) {
+                                   ScheduleTimeResolver timeResolver,
+                                   CourseService courseService) {
         this.courseRepository = courseRepository;
         this.semesterConfig = semesterConfig;
         this.notificationSink = notificationSink;
         this.semesterService = semesterService;
         this.timeResolver = timeResolver;
+        this.courseService = courseService;
     }
 
     @PostConstruct
@@ -82,14 +85,17 @@ public class ScheduleReminderService {
      * 多次调用安全：内部使用去重缓存防止重复发送。
      */
     public void checkReminders() {
+        checkReminders(LocalDateTime.now());
+    }
+
+    void checkReminders(LocalDateTime now) {
         try {
             List<CourseEntity> allCourseEntitys = courseRepository.findAll();
             if (allCourseEntitys.isEmpty()) {
                 return;
             }
 
-            LocalDateTime now = LocalDateTime.now();
-            int today = LocalDate.now().getDayOfWeek().getValue();
+            int today = now.getDayOfWeek().getValue();
 
             // 按用户分组，每个用户独立计算当前教学周
             Map<String, List<CourseEntity>> coursesByUser = allCourseEntitys.stream()
@@ -98,12 +104,14 @@ public class ScheduleReminderService {
             int sentCount = 0;
             for (Map.Entry<String, List<CourseEntity>> entry : coursesByUser.entrySet()) {
                 String userId = entry.getKey();
-                int currentWeek = resolveCurrentWeek(userId);
-                if (currentWeek <= 0) {
+                if (!timeResolver.hasBoundSchool(userId)) continue;
+                CourseService.DateCourses schedule = courseService.getCoursesOnDate(userId, now.toLocalDate());
+                int currentWeek = schedule.week();
+                if (!schedule.calendarConfigured() || currentWeek <= 0) {
                     continue; // 该用户学期未开始
                 }
 
-                for (CourseEntity course : entry.getValue()) {
+                for (CourseEntity course : schedule.courses()) {
                     try {
                         if (checkCourseEntity(course, currentWeek, today, now)) {
                             sentCount++;
@@ -128,17 +136,6 @@ public class ScheduleReminderService {
     }
 
     /**
-     * 解析用户当前教学周（优先 SemesterService，回退 SemesterConfig）
-     */
-    private int resolveCurrentWeek(String userId) {
-        int week = semesterService.getCurrentWeek(userId);
-        if (week > 0) {
-            return week;
-        }
-        return semesterConfig.getCurrentWeek();
-    }
-
-    /**
      * 检查单条课程是否需要发送提醒
      *
      * @return true 表示已发送提醒
@@ -151,7 +148,7 @@ public class ScheduleReminderService {
         if (!course.isActiveInWeek(currentWeek)) return false;
 
         // 3. 计算课程开始时间
-        LocalDateTime courseStartTime = getCourseEntityStartTime(course);
+        LocalDateTime courseStartTime = getCourseEntityStartTime(course, now.toLocalDate());
         if (courseStartTime == null) return false;
 
         // 4. 计算提醒时间窗口
@@ -162,18 +159,19 @@ public class ScheduleReminderService {
 
         // 5. 检查是否已发送过（同一天同一门课不重复）
         String cacheKey = course.getUserId() + ":" + course.getId() + ":"
-                + now.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+                + courseStartTime;
         if (notifiedCache.putIfAbsent(cacheKey, Boolean.TRUE) != null) return false;
 
         // 6. 发送提醒
-        sendReminder(course, courseStartTime, currentWeek);
-        return true;
+        if (sendReminder(course, courseStartTime, currentWeek)) return true;
+        notifiedCache.remove(cacheKey);
+        return false;
     }
 
     /**
      * 发送课前站内提醒
      */
-    private void sendReminder(CourseEntity course, LocalDateTime courseStartTime, int currentWeek) {
+    private boolean sendReminder(CourseEntity course, LocalDateTime courseStartTime, int currentWeek) {
         String timeStr = courseStartTime.format(DateTimeFormatter.ofPattern("HH:mm"));
         String message = buildReminderMessage(course, timeStr, currentWeek);
 
@@ -182,9 +180,11 @@ public class ScheduleReminderService {
                     message, 5, null);
             log.info("课前提醒已发送 | userId={} | course={} | time={}",
                     course.getUserId(), course.getCourseName(), timeStr);
+            return true;
         } catch (Exception e) {
             log.error("课前提醒发送失败 | userId={} | course={}",
                     course.getUserId(), course.getCourseName(), e);
+            return false;
         }
     }
 
@@ -217,13 +217,32 @@ public class ScheduleReminderService {
     /**
      * 根据课程节次计算今日开始时间（通过用户绑定的学校作息配置）
      */
-    private LocalDateTime getCourseEntityStartTime(CourseEntity course) {
+    private LocalDateTime getCourseEntityStartTime(CourseEntity course, LocalDate date) {
         var startTime = timeResolver.getStartTime(course.getUserId(), course.getStartPeriod());
         if (startTime == null) return null;
-        LocalDateTime now = LocalDateTime.now();
-        return now.withHour(startTime.getHour())
-                  .withMinute(startTime.getMinute())
-                  .withSecond(0).withNano(0);
+        return date.atTime(startTime);
+    }
+
+    public Map<String, Object> getStatus(String userId) {
+        List<CourseEntity> courses = courseRepository.findByUserId(userId);
+        boolean schoolBound = timeResolver.hasBoundSchool(userId);
+        boolean calendarConfigured = semesterService.hasSemester(userId) || semesterConfig.getSemesterStart() != null;
+        long resolved = schoolBound ? courses.stream()
+                .filter(course -> timeResolver.getStartTime(userId, course.getStartPeriod()) != null).count() : 0;
+        String status = courses.isEmpty() ? "no_courses" : !schoolBound ? "missing_school"
+                : !calendarConfigured ? "missing_semester" : resolved == 0 ? "missing_timetable"
+                : resolved < courses.size() ? "partially_ready" : "ready";
+        String message = switch (status) {
+            case "no_courses" -> "尚无课程，请先导入课表";
+            case "missing_school" -> "尚未绑定学校，无法按学校作息发送课前提醒";
+            case "missing_semester" -> "尚未设置学期起始日期，无法判断实际教学周";
+            case "missing_timetable" -> "学校作息中没有对应课程节次，请先补全作息配置";
+            case "partially_ready" -> "部分课程节次缺少作息配置，只有已匹配时间的课程可提醒";
+            default -> "已满足课前提醒条件，系统每分钟读取最新课表，在上课前 " + reminderAdvanceMinutes + " 分钟发送站内通知";
+        };
+        return Map.of("status", status, "school_bound", schoolBound, "calendar_configured", calendarConfigured,
+                "advance_minutes", reminderAdvanceMinutes, "course_count", courses.size(),
+                "resolved_course_count", resolved, "message", message);
     }
 
     /**

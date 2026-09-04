@@ -319,7 +319,7 @@ class ToolAssemblyCrossSkillTest {
                 registry, mock(SafetyPolicy.class), mock(SkillPendingCoordinator.class),
                 mock(PendingToolCoordinator.class),
                 mock(AgentActivityRecorder.class), new ToolResultStatusParser(objectMapper),
-                planStore, objectMapper);
+                planStore, objectMapper, mock(com.youkeda.exercise.claw.skill.SkillRegistry.class));
         ExecutionLoop executionLoop = new ExecutionLoop(
                 llmClient, toolExecutor, planStore, new PlanValidator(), objectMapper,
                 List.of(),
