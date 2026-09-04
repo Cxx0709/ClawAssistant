@@ -135,12 +135,14 @@ public class ToolExecutor {
             }
             // 安全检查阻止
             else if (blockedReason != null) {
-                result = policyBlocked(blockedReason);
+                boolean needsConfirm = blockedReason.contains("CONFIRM_REQUIRED");
+                result = needsConfirm ? confirmRequiredResult(toolName) : policyBlocked(blockedReason);
                 resultStatus = ResultStatus.BLOCKED;
                 activityRecorder.toolBlocked(
-                        activityRequestId, toolSkillName, toolName, blockedReason);
+                        activityRequestId, toolSkillName, toolName,
+                        needsConfirm ? "需要确认后执行" : blockedReason);
                 // Phase 5: 高风险工具创建待确认操作（SafetyPolicy 返回 BLOCKED_CONFIRM_REQUIRED）
-                if (blockedReason.contains("CONFIRM_REQUIRED")) {
+                if (needsConfirm) {
                     pendingToolCoordinator.createPending(
                             execContext.userId(), toolName, tc.arguments());
                 }
@@ -262,6 +264,20 @@ public class ToolExecutor {
         } catch (Exception jsonEx) {
             return "{\"status\":\"ERROR\",\"errorCode\":\"TOOL_EXECUTION_FAILED\","
                     + "\"message\":\"工具执行异常\",\"fallback_required\":true}";
+        }
+    }
+
+    /** 高风险工具待确认：给 LLM 的提示明确指向界面上方的确认卡片按钮。 */
+    private String confirmRequiredResult(String toolName) {
+        try {
+            var node = objectMapper.createObjectNode();
+            node.put("status", "BLOCKED");
+            node.put("reason", "CONFIRM_REQUIRED");
+            node.put("confirmHint",
+                    "该操作已生成确认卡片。请这样回复用户：此操作需要确认，请点击界面上方黄色确认卡片中的【确认】按钮完成，无需在聊天中输入任何文字。");
+            return objectMapper.writeValueAsString(node);
+        } catch (Exception e) {
+            return "{\"status\":\"BLOCKED\",\"reason\":\"CONFIRM_REQUIRED\"}";
         }
     }
 

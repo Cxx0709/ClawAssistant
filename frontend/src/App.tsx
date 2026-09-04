@@ -53,10 +53,6 @@ export default function App() {
     window.history.replaceState(null, '', '?memories');
     setView('memories');
   }, []);
-  const goRadar = useCallback(() => {
-    window.history.replaceState(null, '', '?radar');
-    setView('radar');
-  }, []);
   const signOut = useCallback(async () => {
     await logout();
     setUser(null);
