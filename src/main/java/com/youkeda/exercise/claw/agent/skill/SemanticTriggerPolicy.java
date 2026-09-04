@@ -179,7 +179,7 @@ public class SemanticTriggerPolicy implements SkillTriggerPolicy {
             case "transport" -> {
                 expanded.add("怎么去这个地方");
                 expanded.add("坐什么车过去");
-                expanded.add("打车还是坐地铁");
+                expanded.add("坐地铁还是坐公交");
             }
             case "campus" -> {
                 expanded.add("我的课表是什么");

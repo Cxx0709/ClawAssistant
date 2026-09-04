@@ -29,7 +29,9 @@ export default {
         ink: { DEFAULT: '#141517', soft: '#5c6470', faint: '#9aa1ac' },
         line: { DEFAULT: '#e7e9ec', soft: '#eef0f3' },
         canvas: { DEFAULT: '#ffffff', sub: '#fafafb' },
-        brand: { DEFAULT: '#10a37f', deep: '#0d8a6c', dim: '#e7f6f1' },
+        brand: { DEFAULT: '#5B5BD6', deep: '#4540b0', dim: '#EDEDFB' },  // 紫色（Agent动作与身份）
+        ok: { DEFAULT: '#1E9E7A', dim: '#E3F4EE' },                     // 绿色（完成/新增/正常）
+        warn: { DEFAULT: '#B97A14', dim: '#FBF0DB' },                   // 琥珀色（待用户决策）
         bubble: '#eef0f2',
       },
       borderRadius: {

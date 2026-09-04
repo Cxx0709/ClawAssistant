@@ -217,9 +217,9 @@ class ToolAssemblyCrossSkillTest {
                         "map_distance_calculate", "weather_query", "transport_recommend",
                         "place_image_search"),
                 "prompts/skills/travel.txt", null, null, null, true));
-        skills.put("transport", new SkillDefinition("transport", null, 4, Set.of("出行", "打车"),
+        skills.put("transport", new SkillDefinition("transport", null, 4, Set.of("出行", "交通"),
                 Set.of("transport_recommend"),
-                Set.of("didi_ride", "map_search_place", "map_route_planning",
+                Set.of("map_search_place", "map_route_planning",
                         "map_distance_calculate"),
                 "prompts/skills/transport.txt", "transportTriggerPolicy", null, null, true));
         skills.put("weather", new SkillDefinition("weather", null, 2, Set.of("天气"),

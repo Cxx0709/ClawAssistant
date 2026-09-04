@@ -17,7 +17,7 @@ class SkillRouterExplicitSwitchTest {
     @Test
     void travelDoesNotStealTransportKeywordInExplicitSwitch() {
         // Layer 2 回归：travel 使用默认关键词策略，不得通过共享 KeywordTriggerPolicy
-        // 匹配到 transport 的「打车」。剥掉「不要」后剩「打车了，帮我生成一张水墨风风景图」，
+        // 匹配到 transport 的「怎么去/坐车」。剥掉「不要」后剩「坐车了，帮我生成一张水墨风风景图」，
         // 只有 transport（自定义 transportTriggerPolicy）能匹配。
         SkillRegistry registry = mock(SkillRegistry.class);
         SkillDefinition travel = skill("travel", null, 5);
@@ -28,7 +28,7 @@ class SkillRouterExplicitSwitchTest {
         when(store.find("owner")).thenReturn(Optional.empty());
 
         TriggerPolicyFactory policyFactory = mock(TriggerPolicyFactory.class);
-        SkillTriggerPolicy transportPolicy = policyMatching("打车");
+        SkillTriggerPolicy transportPolicy = policyMatching("坐车");
         when(policyFactory.getPolicy("transportTriggerPolicy")).thenReturn(transportPolicy);
 
         TriggerProperties triggers = mock(TriggerProperties.class);
@@ -38,10 +38,10 @@ class SkillRouterExplicitSwitchTest {
         SkillRouter router = new SkillRouter(
                 registry, store, policyFactory, mock(SkillLlmRouter.class), triggers);
 
-        SkillRoutingResult result = router.route("不要打车了，帮我生成一张水墨风风景图", "owner");
+        SkillRoutingResult result = router.route("不要坐车了，帮我生成一张水墨风风景图", "owner");
 
         assertEquals("transport", result.primarySkill(),
-                "「打车」必须归 transport，travel 不得偷走");
+                "「怎么去/坐车」必须归 transport，travel 不得偷走");
         assertEquals(SkillRoutingResult.SkillRoutingAction.SWITCH, result.action());
     }
 
@@ -58,7 +58,7 @@ class SkillRouterExplicitSwitchTest {
         when(store.find("owner")).thenReturn(Optional.empty());
 
         TriggerPolicyFactory policyFactory = mock(TriggerPolicyFactory.class);
-        SkillTriggerPolicy transportPolicy = policyMatching("打车");
+        SkillTriggerPolicy transportPolicy = policyMatching("坐车");
         when(policyFactory.getPolicy("transportTriggerPolicy")).thenReturn(transportPolicy);
 
         TriggerProperties triggers = mock(TriggerProperties.class);
@@ -70,7 +70,7 @@ class SkillRouterExplicitSwitchTest {
         SkillRouter router = new SkillRouter(
                 registry, store, policyFactory, mock(SkillLlmRouter.class), triggers);
 
-        SkillRoutingResult result = router.route("不要打车了，帮我生成一张水墨风风景图", "owner");
+        SkillRoutingResult result = router.route("不要坐车了，帮我生成一张水墨风风景图", "owner");
 
         assertEquals("image", result.primarySkill());
         assertEquals(SkillRoutingResult.SkillRoutingAction.SWITCH, result.action());

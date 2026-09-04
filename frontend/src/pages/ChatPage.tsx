@@ -6,8 +6,11 @@ import ToolTrace from '../components/ToolTrace';
 import ConversationSidebar from '../components/ConversationSidebar';
 import Composer from '../components/Composer';
 import MemoryNotice from '../components/MemoryNotice';
+import ArtifactCard from '../components/ArtifactCard';
+import WorkspaceCanvas from '../components/WorkspaceCanvas';
 import { getMemories } from '../lib/memories';
 import { useAttachments } from '../lib/useAttachments';
+import { toolActionLabel } from '../lib/format';
 import {
   createConversation,
   deleteConversation,
@@ -41,6 +44,8 @@ export default function ChatPage({ onHome, user, onLogout }: {
   const [busy, setBusy] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
   const [railToken, setRailToken] = useState(0);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [highlightArtifactId, setHighlightArtifactId] = useState<string | null>(null);
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [archivedConversations, setArchivedConversations] = useState<Conversation[]>([]);
@@ -626,6 +631,26 @@ export default function ChatPage({ onHome, user, onLogout }: {
             </svg>
             信息
           </button>
+          <button
+            type="button"
+            onClick={() => setWorkspaceOpen((v) => !v)}
+            aria-pressed={workspaceOpen}
+            className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[12.5px] font-medium transition-colors ${
+              workspaceOpen
+                ? 'border-brand/30 bg-brand-dim text-brand-deep'
+                : 'border-line text-ink-soft hover:bg-canvas-sub hover:text-ink'
+            }`}
+          >
+            <span>🎨</span>
+            工作台
+          </button>
+          <a
+            href="?radar"
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-[12.5px] font-medium text-ink-soft transition-colors hover:bg-canvas-sub hover:text-ink"
+          >
+            <span>📡</span>
+            雷达
+          </a>
           <button type="button" onClick={onLogout} className="h-9 px-2 text-xs text-ink-faint hover:text-ink">退出</button>
         </div>
       </header>
@@ -698,6 +723,10 @@ export default function ChatPage({ onHome, user, onLogout }: {
               <MessageList
                 messages={messages}
                 onToggleTrace={toggleTrace}
+                onOpenWorkspace={(artifactId) => {
+                  setWorkspaceOpen(true);
+                  setHighlightArtifactId(artifactId);
+                }}
               />
             </div>
           </div>
@@ -738,6 +767,23 @@ export default function ChatPage({ onHome, user, onLogout }: {
             />
             <div className="fixed inset-y-0 right-0 z-40 w-[85vw] max-w-[340px] shadow-[-8px_0_30px_-18px_rgba(20,21,23,.25)] lg:static lg:z-auto lg:w-auto lg:max-w-none lg:shrink-0 lg:shadow-none">
               <RightRail refreshToken={railToken} />
+            </div>
+          </>
+        )}
+
+        {/* 右侧工作台（宽屏占位 / 窄屏悬浮） */}
+        {workspaceOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-30 bg-ink/20 backdrop-blur-[1px] lg:hidden"
+              onClick={() => setWorkspaceOpen(false)}
+            />
+            <div className="fixed inset-y-0 right-0 z-40 w-[85vw] max-w-[400px] shadow-[-8px_0_30px_-18px_rgba(20,21,23,.25)] lg:static lg:z-auto lg:w-[400px] lg:max-w-none lg:shrink-0 lg:shadow-none">
+              <WorkspaceCanvas
+                conversationId={conversationId}
+                refreshToken={railToken}
+                highlightArtifactId={highlightArtifactId}
+              />
             </div>
           </>
         )}
@@ -794,9 +840,11 @@ function EmptyState({ onPick }: { onPick: (s: string) => void }) {
 function MessageList({
   messages,
   onToggleTrace,
+  onOpenWorkspace,
 }: {
   messages: ChatMsg[];
   onToggleTrace: (id: string) => void;
+  onOpenWorkspace?: (artifactId: string) => void;
 }) {
   return (
     <div className="space-y-6">
@@ -828,11 +876,15 @@ function MessageList({
             />
 
             {m.streaming && !m.content && !m.errorText ? (
-              <TypingDots />
+              <TypingDots
+                action={m.tools?.find(t => t.state === 'running')?.name
+                  ? `正在${toolActionLabel(m.tools.find(t => t.state === 'running')?.name)}…`
+                  : undefined}
+              />
             ) : (
               m.content && <Markdown content={m.content} />
             )}
-            <ArtifactList artifacts={m.artifacts ?? []} />
+            <ArtifactList artifacts={m.artifacts ?? []} onOpenWorkspace={onOpenWorkspace} />
           </div>
         ),
       )}
@@ -840,39 +892,44 @@ function MessageList({
   );
 }
 
-function ArtifactList({ artifacts, compact = false }: { artifacts: Artifact[]; compact?: boolean }) {
+function ArtifactList({ artifacts, compact = false, onOpenWorkspace }: { artifacts: Artifact[]; compact?: boolean; onOpenWorkspace?: (artifactId: string) => void }) {
   if (artifacts.length === 0) return null;
   return (
     <div className={`mt-3 grid gap-2 ${compact ? 'max-w-[82%]' : 'sm:grid-cols-2'}`}>
-      {artifacts.map((artifact) => artifact.kind === 'IMAGE' ? (
-        <a key={artifact.id} href={artifact.url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-xl border border-line bg-white">
-          <img src={artifact.url} alt={artifact.description || artifact.fileName} className="max-h-72 w-full object-contain" />
-        </a>
-      ) : artifact.kind === 'AUDIO' ? (
-        <div key={artifact.id} className="rounded-xl border border-line bg-white p-3">
-          <p className="mb-2 truncate text-xs text-ink-soft">{artifact.fileName}</p>
-          <audio controls preload="metadata" src={artifact.url} className="h-9 w-full" />
+      {artifacts.map((artifact) => (
+        <div key={artifact.id} className="flex flex-col gap-1">
+          <ArtifactCard
+            artifact={artifact}
+            compact={compact}
+            onBoardClick={() => onOpenWorkspace?.(artifact.id)}
+          />
+          {artifact.kind === 'BOARD' && !compact && (
+            <button
+              onClick={() => onOpenWorkspace?.(artifact.id)}
+              className="flex items-center gap-1 self-start rounded-md px-2 py-1 text-xs text-brand hover:bg-brand-dim transition-colors"
+            >
+              <span>→</span> 工作台
+            </button>
+          )}
         </div>
-      ) : (
-        <a key={artifact.id} href={artifact.url} download={artifact.fileName} className="flex items-center gap-2 rounded-xl border border-line bg-white px-3 py-2.5 text-sm text-brand-deep hover:border-brand/50">
-          <span aria-hidden="true">↧</span><span className="truncate">{artifact.fileName}</span>
-        </a>
       ))}
     </div>
   );
 }
 
-function TypingDots() {
+function TypingDots({ action }: { action?: string }) {
   return (
     <div className="mt-2 flex items-center gap-1.5 pl-1">
       {[0, 1, 2].map((i) => (
         <span
           key={i}
-          className="h-1.5 w-1.5 rounded-full bg-ink-faint animate-blink"
+          className="h-1.5 w-1.5 rounded-full bg-brand animate-blink"
           style={{ animationDelay: `${i * 180}ms` }}
         />
       ))}
-      <span className="ml-1 text-xs text-ink-faint">思考中…</span>
+      <span className="ml-1 text-xs text-ink-soft font-medium">
+        {action || '思考中…'}
+      </span>
     </div>
   );
 }

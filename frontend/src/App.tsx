@@ -6,17 +6,19 @@ import ChatPage from './pages/ChatPage';
 import Landing from './pages/Landing';
 import VisualizationPage from './pages/VisualizationPage';
 import MemoryPage from './pages/MemoryPage';
+import AgentRadarPage from './pages/AgentRadarPage';
 
 /**
  * 单页双视图（home / chat），状态切换代替路由 —— 避免后端 fallback 问题。
  * 构建产物直接由 Spring Boot 托管，任何路径都可回退到本入口。
  */
 export default function App() {
-  const [view, setView] = useState<'home' | 'chat' | 'visualization' | 'memories'>(() => {
+  const [view, setView] = useState<'home' | 'chat' | 'visualization' | 'memories' | 'radar'>(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.has('conversation')) return 'chat';
     if (params.has('diagnostics')) return 'visualization';
     if (params.has('memories') || params.has('visualization')) return 'memories';
+    if (params.has('radar')) return 'radar';
     return 'home';
   });
   const [user, setUser] = useState<AppUser | null>(null);
@@ -51,6 +53,10 @@ export default function App() {
     window.history.replaceState(null, '', '?memories');
     setView('memories');
   }, []);
+  const goRadar = useCallback(() => {
+    window.history.replaceState(null, '', '?radar');
+    setView('radar');
+  }, []);
   const signOut = useCallback(async () => {
     await logout();
     setUser(null);
@@ -74,6 +80,8 @@ export default function App() {
   }
 
   if (view === 'memories') return <MemoryPage onBack={goHome} />;
+
+  if (view === 'radar') return <AgentRadarPage />;
 
   return view === 'chat'
     ? <ChatPage onHome={goHome} user={user} onLogout={signOut} />

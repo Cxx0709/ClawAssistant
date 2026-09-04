@@ -197,7 +197,7 @@ public class SkillRouter {
 
             // 与 Layer 3 相同的「按 skill 取词」：默认关键词策略直接匹配本 skill 的关键词，
             // 避免共享 KeywordTriggerPolicy 把别家 skill 的关键词记到当前遍历的 skill 头上
-            // （否则 travel 会抢走 transport 的「打车」）。自定义策略（transport/scout）走各自 policy。
+            // （否则 travel 会抢走 transport 的「怎么去」）。自定义策略（transport/scout）走各自 policy。
             boolean isDefaultKeywordPolicy = skill.triggerPolicyName() == null
                     || "keywordTriggerPolicy".equals(skill.triggerPolicyName());
 
