@@ -64,7 +64,7 @@ function ChevronIcon({ open }: { open: boolean }) {
 
 /** 单行工具条目：出现 → 运行中 → ✓/✗ + 耗时。 */
 function ToolRow({ tool }: { tool: ToolItem }) {
-  const name = tool.name.replace(/_/g, ' ');
+  const name = tool.name === 'image_recognition' ? '图片识别' : tool.name.replace(/_/g, ' ');
   return (
     <div className="trace-row trace-row-enter">
       {tool.state === 'running' ? (
@@ -94,8 +94,10 @@ function ToolRow({ tool }: { tool: ToolItem }) {
  * Agent 工具调用时间线：
  * 流式中逐条实时出现（运行态 spinner）；结束后若未手动展开，收成一行摘要，可点开展开回看。
  */
-export default function ToolTrace({ tools, skills = [], running, open, totalMs, onToggle }: ToolTraceProps) {
-  if (tools.length === 0 && skills.length === 0) return null;
+export default function ToolTrace({ tools, running, open, totalMs, onToggle }: ToolTraceProps) {
+  // A routing event is not a tool call (nor evidence of image recognition).
+  if (tools.length === 0) return null;
+  const skills = [...new Set(tools.map((tool) => tool.skill).filter((skill) => skill && skill !== 'common'))];
 
   const expanded = open || running;
   const errCount = tools.filter((t) => t.state === 'err').length;

@@ -2,6 +2,7 @@ package com.youkeda.exercise.claw.agent.skill;
 
 import com.youkeda.exercise.claw.skill.SkillDefinition;
 import com.youkeda.exercise.claw.skill.SkillRegistry;
+import com.youkeda.exercise.claw.agent.memory.Message;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -35,13 +36,10 @@ public class SkillRouter {
     private static final Set<String> NEGATIONS = Set.of("别", "不要", "先不说", "不谈", "不说", "不用", "换", "切到", "切换到");
 
     /** 续接最低置信度：低于该值视为「与 activeSkill 弱关联」，不再维持旧 skill */
-    private static final double CONTINUATION_MIN_CONFIDENCE = 0.3;
+    private static final double CONTINUATION_MIN_CONFIDENCE = 0.7;
 
     /** 新触发词生效门槛：Layer 3 关键词触发与 pending 抢占共用，置信度达标才算「强新意图」 */
     private static final double NEW_TRIGGER_MIN_CONFIDENCE = 0.8;
-
-    /** 连续低置信度释放阈值：inactivityCount 达到该值后升级为「彻底释放」 */
-    private static final int LOW_CONFIDENCE_RELEASE_LIMIT = 2;
 
     /** 高置信度阈值：用于多技能并行激活判断 */
     private static final double HIGH_CONFIDENCE_THRESHOLD = 0.75;
@@ -60,38 +58,48 @@ public class SkillRouter {
     }
 
     public SkillRoutingResult route(String message, String userId) {
+        return route(message, userId, List.of());
+    }
+
+    public SkillRoutingResult route(String message, String userId, List<Message> history) {
         if (message == null || message.isBlank()) return SkillRoutingResult.fallback();
 
         Optional<SkillSession> sessionOpt = sessionStore.find(userId);
 
-        // Layer 1: Pending interaction confirmation
-        SkillRoutingResult layer1 = handlePendingInteraction(message, sessionOpt);
-        if (layer1 != null) return layer1;
-
-        // Layer 2: Explicit skill switch
+        // Explicit switches must also work while a task is collecting input.
         SkillRoutingResult layer2 = handleExplicitSwitch(message, sessionOpt);
         if (layer2 != null) return layer2;
+
+        // Layer 1: Pending interaction confirmation
+        SkillRoutingResult layer1 = handlePendingInteraction(message, userId, sessionOpt, history);
+        if (layer1 != null) return layer1;
 
         // Layer 3: New trigger word match
         SkillRoutingResult layer3 = handleNewTrigger(message, sessionOpt);
         if (layer3 != null && layer3.confidence() >= NEW_TRIGGER_MIN_CONFIDENCE) {
             return layer3;
         }
+        if (layer3 != null) return routeSemantically(message, userId, sessionOpt, history);
 
         // Layer 4: Continuation check
         SkillRoutingResult layer4 = handleContinuation(message, sessionOpt);
         if (layer4 != null) return layer4;
 
-        // Layer 5: LLM Router (slow path)
-        if (config.llmRouterEnabled()) {
-            SkillRoutingResult layer5 = llmRouter.route(message, userId, skillRegistry);
-            if (layer5 != null) return layer5;
-        }
+        return routeSemantically(message, userId, sessionOpt, history);
+    }
 
+    private SkillRoutingResult routeSemantically(String message, String userId,
+            Optional<SkillSession> session, List<Message> history) {
+        if (config.llmRouterEnabled()) {
+            SkillRoutingResult result = llmRouter.route(message, userId, skillRegistry, session, history);
+            if (result != null) return result;
+        }
+        // NONE retains resumable state; the executor uses primarySkill for this turn.
         return SkillRoutingResult.fallback();
     }
 
-    private SkillRoutingResult handlePendingInteraction(String message, Optional<SkillSession> sessionOpt) {
+    private SkillRoutingResult handlePendingInteraction(String message, String userId,
+            Optional<SkillSession> sessionOpt, List<Message> history) {
         if (sessionOpt.isEmpty()) return null;
         SkillSession session = sessionOpt.get();
 
@@ -123,20 +131,13 @@ public class SkillRouter {
                         SkillRoutingResult.SkillRoutingAction.DEACTIVATE, 0.0,
                         "pending interaction timeout, release " + session.activeSkill());
             }
-            return SkillRoutingResult.of(session.activeSkill(), Set.of(),
-                    SkillRoutingResult.SkillRoutingAction.CONTINUE, 0.95,
-                    "pending interaction response for " + session.activeSkill());
-        }
-
-        if (!"travel".equals(session.activeSkill())) return null;
-
-        Set<String> pendingKeywords = Set.of("确认", "选择方案", "好的", "行", "可以", "这个方案");
-        boolean hasKeyword = pendingKeywords.stream().anyMatch(message::contains);
-
-        if (hasKeyword) {
-            return SkillRoutingResult.of(session.activeSkill(), Set.of(),
-                    SkillRoutingResult.SkillRoutingAction.CONTINUE, 0.95,
-                    "pending interaction confirmation for " + session.activeSkill());
+            if (message.trim().matches("(?:确认|好的?|可以|行|确认导入|确认保存)[。！!]?")) {
+                return SkillRoutingResult.of(session.activeSkill(), Set.of(),
+                        SkillRoutingResult.SkillRoutingAction.CONTINUE, 0.95,
+                        "pending interaction confirmation for " + session.activeSkill());
+            }
+            // A pending slot is context, not evidence that every message answers it.
+            return routeSemantically(message, userId, sessionOpt, history);
         }
         return null;
     }
@@ -156,6 +157,8 @@ public class SkillRouter {
     private SkillRoutingResult tryPreemptPendingWithNewIntent(
             String message, Optional<SkillSession> sessionOpt) {
         SkillSession session = sessionOpt.get();
+
+        if ("common".equals(session.activeSkill())) return null;
         String pendingSlot = session.pendingSlot();
         if (pendingSlot != null && !pendingSlot.isBlank()) {
             return null;
@@ -245,7 +248,8 @@ public class SkillRouter {
 
                 boolean matched = skillKeywords.stream().anyMatch(message::contains);
                 if (matched) {
-                    matches.add(new SkillMatchResult(skill.name(), 0.85, skill.priority()));
+                    // Topic keywords nominate candidates; they do not establish a task.
+                    matches.add(new SkillMatchResult(skill.name(), 0.65, skill.priority()));
                 }
             } else {
                 // Custom trigger policy (ScoutTriggerPolicy, TransportTriggerPolicy, etc.)
@@ -319,6 +323,7 @@ public class SkillRouter {
     private SkillRoutingResult handleContinuation(String message, Optional<SkillSession> sessionOpt) {
         if (sessionOpt.isEmpty()) return null;
         SkillSession session = sessionOpt.get();
+        if ("common".equals(session.activeSkill())) return null;
 
         long minutesSinceActivity = ChronoUnit.MINUTES.between(session.lastActivityAt(), Instant.now());
         if (minutesSinceActivity >= config.sessionTimeoutMinutes()) {
@@ -333,19 +338,22 @@ public class SkillRouter {
                     "inactivity limit reached for " + session.activeSkill());
         }
 
-        Set<String> resumeKeywords = Set.of("继续", "刚才", "接着", "上一步");
-        if (resumeKeywords.stream().anyMatch(message::contains) && session.previousSkill() != null) {
-            return SkillRoutingResult.of(session.previousSkill(), Set.of(),
-                    SkillRoutingResult.SkillRoutingAction.SWITCH, 0.9,
-                    "resume previous skill: " + session.previousSkill());
-        }
-
         // Default continuation check
         SkillDefinition skillDef = skillRegistry.find(session.activeSkill()).orElse(null);
         if (skillDef == null) return null;
 
-        SkillTriggerPolicy policy = triggerPolicyFactory.getPolicy(skillDef.triggerPolicyName());
-        SkillTriggerMatch match = policy.match(message, sessionOpt);
+        SkillTriggerMatch match;
+        if (skillDef.triggerPolicyName() == null || "keywordTriggerPolicy".equals(skillDef.triggerPolicyName())) {
+            // The shared keyword policy scans every skill; continuation must not do that.
+            List<String> keywords = triggerProperties.getTriggers() == null ? List.of()
+                    : triggerProperties.getTriggers().getOrDefault(skillDef.name(), List.of());
+            match = keywords.stream().anyMatch(message::contains)
+                    ? new SkillTriggerMatch(true, 0.85, "current skill keyword", true)
+                    : SkillTriggerMatch.noMatch();
+        } else {
+            SkillTriggerPolicy policy = triggerPolicyFactory.getPolicy(skillDef.triggerPolicyName());
+            match = policy.match(message, sessionOpt);
+        }
 
         // 高置信度续接：当前消息与 activeSkill 强关联，保持 skill 继续处理
         if (match.matched() && match.confidence() >= CONTINUATION_MIN_CONFIDENCE) {
@@ -369,19 +377,8 @@ public class SkillRouter {
                     "request outside personal timetable management");
         }
 
-        // 低置信度续接保护：当前消息与 activeSkill 弱关联/无关。
-        // 第一次低置信度先 CONTINUE 计数（inactivityCount+1），继续维持旧 skill，
-        // 避免「估价后追问校区/车型」这类多轮澄清被误判为无关而中断；
-        // 连续低置信度达到 LOW_CONFIDENCE_RELEASE_LIMIT 后才升级为「彻底释放」（DEACTIVATE），
-        // 防止 skill 长期占用导致工具白名单被错误限制。
-        if (session.inactivityCount() >= LOW_CONFIDENCE_RELEASE_LIMIT) {
-            return SkillRoutingResult.of("common", Set.of(),
-                    SkillRoutingResult.SkillRoutingAction.DEACTIVATE, 0.0,
-                    "consecutive low-confidence continuation, fully release " + session.activeSkill());
-        }
-        return SkillRoutingResult.of(session.activeSkill(), Set.of(),
-                SkillRoutingResult.SkillRoutingAction.CONTINUE, 0.1,
-                "low-confidence continuation, keep " + session.activeSkill());
+        // No evidence of continuation: classify this turn using bounded context.
+        return null;
     }
 
     private record SkillMatchResult(String skillName, double confidence, int priority) {}

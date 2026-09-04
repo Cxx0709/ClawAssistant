@@ -48,13 +48,22 @@ public class SkillRegistry {
             healthCache.put(name, health);
             if (health.status() != SkillHealth.SkillStatus.UNAVAILABLE) {
                 skills.put(name, def);
-                // 构建 tool→skill 映射（ToolSkillResolver）
-                for (String tool : def.allowedTools()) {
-                    toolSkillMap.putIfAbsent(tool, name);
-                }
             }
             log.info("Skill [{}]: {}", name, health.status());
         });
+        // Required ownership takes precedence over optional use by another skill.
+        // For example, travel may use weather_query, but weather owns that tool.
+        toolSkillMap.clear();
+        List<SkillDefinition> ordered = skills.values().stream()
+                .sorted(Comparator.comparing(SkillDefinition::name)).toList();
+        for (SkillDefinition def : ordered) {
+            if (def.requiredTools() != null) {
+                def.requiredTools().forEach(tool -> toolSkillMap.putIfAbsent(tool, def.name()));
+            }
+        }
+        for (SkillDefinition def : ordered) {
+            def.allowedTools().forEach(tool -> toolSkillMap.putIfAbsent(tool, def.name()));
+        }
         log.info("ToolSkillResolver 映射已构建 | toolCount={}", toolSkillMap.size());
     }
 

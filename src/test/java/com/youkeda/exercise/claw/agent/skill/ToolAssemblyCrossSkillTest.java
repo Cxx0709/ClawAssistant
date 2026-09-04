@@ -291,7 +291,7 @@ class ToolAssemblyCrossSkillTest {
                         SkillRoutingResult.SkillRoutingAction.ACTIVATE, 0.9,
                         "test routing to " + activeSkill.name())
                 : SkillRoutingResult.fallback();
-        when(skillRouter.route(anyString(), anyString())).thenReturn(routingResult);
+        when(skillRouter.route(anyString(), anyString(), anyList())).thenReturn(routingResult);
 
         SkillSessionStore sessionStore = mock(SkillSessionStore.class);
         SkillSession session = activeSkill != null

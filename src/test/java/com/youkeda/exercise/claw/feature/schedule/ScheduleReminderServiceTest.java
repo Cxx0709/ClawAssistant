@@ -52,12 +52,12 @@ class ScheduleReminderServiceTest {
         verify(sink, times(2)).publish(anyString(), anyString(), anyString(), anyString(), anyInt(), isNull());
     }
 
-    @Test void missingSchoolDoesNotPretendReminderIsReady() {
+    @Test void reminderWorksWithoutSchoolBinding() {
         prepare();
         when(times.hasBoundSchool("u")).thenReturn(false);
         reminders.checkReminders(now);
-        verifyNoInteractions(sink);
-        assertEquals("missing_school", reminders.getStatus("u").get("status"));
+        // 学校绑定已移除，提醒应该正常发送
+        verify(sink, times(1)).publish(eq("u"), eq("COURSE_REMINDER"), anyString(), anyString(), eq(5), isNull());
     }
 
     @Test void onlyDateFilteredCoursesAreNotified() {

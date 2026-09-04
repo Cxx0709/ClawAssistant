@@ -104,6 +104,8 @@ public class ToolExecutor {
 
         for (LLMResponse.ToolCall tc : toolCalls) {
             String toolName = tc.name();
+            String owningSkill = skillRegistry.resolveSkillForTool(toolName);
+            String toolSkillName = owningSkill == null ? "common" : owningSkill;
             log.info("工具调用 | name={} | args={} | id={}", toolName, tc.arguments(), tc.id());
 
             Tool fn = toolRegistry.find(toolName);
@@ -120,7 +122,7 @@ public class ToolExecutor {
                 result = "{\"error\":\"未知工具: " + toolName + "\"}";
                 resultStatus = ResultStatus.FAILED;
                 activityRecorder.toolBlocked(
-                        activityRequestId, activeSkillName, toolName, "未知工具");
+                        activityRequestId, toolSkillName, toolName, "未知工具");
             }
             // 当前消息不满足工具的严格触发条件
             else if (!fn.isAvailable(execContext)) {
@@ -129,14 +131,14 @@ public class ToolExecutor {
                 result = policyBlocked(reason);
                 resultStatus = ResultStatus.BLOCKED;
                 activityRecorder.toolBlocked(
-                        activityRequestId, activeSkillName, toolName, reason);
+                        activityRequestId, toolSkillName, toolName, reason);
             }
             // 安全检查阻止
             else if (blockedReason != null) {
                 result = policyBlocked(blockedReason);
                 resultStatus = ResultStatus.BLOCKED;
                 activityRecorder.toolBlocked(
-                        activityRequestId, activeSkillName, toolName, blockedReason);
+                        activityRequestId, toolSkillName, toolName, blockedReason);
                 // Phase 5: 高风险工具创建待确认操作（SafetyPolicy 返回 BLOCKED_CONFIRM_REQUIRED）
                 if (blockedReason.contains("CONFIRM_REQUIRED")) {
                     pendingToolCoordinator.createPending(
@@ -148,14 +150,14 @@ public class ToolExecutor {
                 result = policyBlocked("本次请求工具调用数量已达上限，请使用已有结果生成答复。");
                 resultStatus = ResultStatus.BLOCKED;
                 activityRecorder.toolBlocked(
-                        activityRequestId, activeSkillName, toolName, "工具调用数量已达上限");
+                        activityRequestId, toolSkillName, toolName, "工具调用数量已达上限");
             }
             // 去重（相同工具 + 相同参数）
             else if (!executedCalls.add(callSignature)) {
                 result = policyBlocked("相同工具和参数已经执行过，请使用已有结果，不要重复调用。");
                 resultStatus = ResultStatus.BLOCKED;
                 activityRecorder.toolBlocked(
-                        activityRequestId, activeSkillName, toolName, "重复工具调用");
+                        activityRequestId, toolSkillName, toolName, "重复工具调用");
             }
             // 执行
             else {
@@ -163,7 +165,7 @@ public class ToolExecutor {
                 executedInBatch = true;
                 long toolStartedAt = System.currentTimeMillis();
                 activityRecorder.toolStarted(
-                        activityRequestId, activeSkillName, toolName);
+                        activityRequestId, toolSkillName, toolName);
                 try {
                     result = fn.execute(tc.arguments(), execContext);
                     session = skillPendingCoordinator.afterToolExecution(session, toolName, result);
@@ -183,7 +185,7 @@ public class ToolExecutor {
                     boolean succeeded = resultStatus == ResultStatus.SUCCESS
                             || resultStatus == ResultStatus.PARTIAL;
                     activityRecorder.toolFinished(
-                            activityRequestId, activeSkillName, toolName, succeeded,
+                            activityRequestId, toolSkillName, toolName, succeeded,
                             System.currentTimeMillis() - toolStartedAt,
                             succeeded ? null : resultSummary(result));
                 } catch (Exception e) {
@@ -195,7 +197,7 @@ public class ToolExecutor {
                     resultStatus = ResultStatus.FAILED;
                     toolStatuses.put(toolName, resultStatus);
                     activityRecorder.toolFinished(
-                            activityRequestId, activeSkillName, toolName, false,
+                            activityRequestId, toolSkillName, toolName, false,
                             System.currentTimeMillis() - toolStartedAt,
                             e.getMessage());
                 }

@@ -191,12 +191,15 @@ public class ReActAgentExecutor implements AgentExecutor {
         }
 
         // Route through SkillRouter
-        SkillRoutingResult routingResult = skillRouter.route(userMessage, userId);
+        SkillRoutingResult routingResult = skillRouter.route(userMessage, userId,
+                contextStore.getHistory(userId, context.getConversationId(), 12));
         SkillSession session = skillSessionUpdater.update(userId, routingResult);
         context.setSkillSession(session);
 
         // Get active SkillDefinition
-        String activeSkillName = session.activeSkill();
+        // Retained session state is only for resuming tasks. It must not select
+        // this turn's prompt, tools, dispatcher or reply guard after a common fallback.
+        String activeSkillName = routingResult.primarySkill();
         SkillDefinition activeSkill = skillRegistry.find(activeSkillName).orElse(null);
         activityRecorder.skillSelected(activityRequestId, activeSkillName);
 

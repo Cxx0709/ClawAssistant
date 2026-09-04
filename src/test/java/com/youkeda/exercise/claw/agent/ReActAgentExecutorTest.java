@@ -40,6 +40,33 @@ import static org.mockito.Mockito.*;
 class ReActAgentExecutorTest {
 
     @Test
+    void retainedCampusTaskDoesNotSelectCampusPromptToolsOrDispatcherForCommonTurn() {
+        Fixture fixture = fixture();
+        SkillSession campusSession = SkillSession.create("test-user").withActiveSkill("campus")
+                .withPendingAction("EXAM_IMPORT", "location");
+        when(fixture.sessionStore.find("test-user")).thenReturn(java.util.Optional.of(campusSession));
+        SkillDefinition campus = mock(SkillDefinition.class);
+        when(campus.name()).thenReturn("campus");
+        when(campus.allowedTools()).thenReturn(Set.of("exam_schedule"));
+        when(campus.systemPromptResource()).thenReturn("prompts/skills/campus.txt");
+        when(fixture.skillRegistry.find("campus")).thenReturn(java.util.Optional.of(campus));
+        when(fixture.llmClient.chatWithTools(anyString(), anyList(), anyList()))
+                .thenReturn(new LLMResponse("小狗很可爱。", List.of(), "stop"));
+
+        assertEquals("小狗很可爱。", fixture.executor.execute(new AgentContext()
+                .setUserId("test-user").setMessage("我喜欢小狗")));
+        verify(fixture.skillRegistry, never()).find("campus");
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<List<ToolDefinition>> tools = ArgumentCaptor.forClass(List.class);
+        verify(fixture.llmClient).chatWithTools(prompt.capture(), anyList(), tools.capture());
+        assertFalse(prompt.getValue().contains("[SKILL_CONTEXT]"));
+        assertTrue(tools.getValue().stream().noneMatch(t -> "exam_schedule".equals(t.name())));
+        verify(fixture.dispatcher, never()).dispatch(eq(campus), anyString(), any());
+        verify(fixture.sessionStore, atLeastOnce()).save(eq("test-user"), argThat(s ->
+                "campus".equals(s.activeSkill()) && "location".equals(s.pendingSlot())));
+    }
+
+    @Test
     void shouldStopOfferingToolsWhenWholeBatchWasBlocked() {
         Fixture fixture = fixture();
         when(fixture.llmClient.chatWithTools(anyString(), anyList(), anyList()))
@@ -198,7 +225,7 @@ class ReActAgentExecutorTest {
 
         // Skill dependencies (mocked to fallback to common mode)
         SkillRouter skillRouter = mock(SkillRouter.class);
-        when(skillRouter.route(anyString(), anyString()))
+        when(skillRouter.route(anyString(), anyString(), anyList()))
                 .thenReturn(SkillRoutingResult.fallback());
         SkillSessionStore skillSessionStore = mock(SkillSessionStore.class);
         when(skillSessionStore.find(anyString())).thenReturn(java.util.Optional.empty());
@@ -234,7 +261,7 @@ class ReActAgentExecutorTest {
                 executionLoop,
                 new CommonCapabilityRegistry(skillsProperties),
                 notHandlingPendingCoordinator());
-        return new Fixture(llmClient, executor, contextStore);
+        return new Fixture(llmClient, executor, contextStore, skillSessionStore, skillRegistry, skillExecutionDispatcher);
     }
 
     private static PendingToolCoordinator notHandlingPendingCoordinator() {
@@ -245,6 +272,7 @@ class ReActAgentExecutorTest {
     }
 
     private record Fixture(LLMClient llmClient, ReActAgentExecutor executor,
-                           ContextStore contextStore) {
+                           ContextStore contextStore, SkillSessionStore sessionStore,
+                           SkillRegistry skillRegistry, SkillExecutionDispatcher dispatcher) {
     }
 }

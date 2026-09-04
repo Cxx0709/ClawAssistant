@@ -72,6 +72,21 @@ public class CourseImportFlowActions {
     }
 
     public String handleParse(JsonNode args, String userId) {
+        String issues = args.path("recognition_issues").asText("").trim();
+        if (issues.isEmpty() && "image".equals(args.path("source_type").asText())) {
+            issues = validateImageCourses(args.path("courses"));
+        }
+        if (!issues.isEmpty()) {
+            // 修正失败不能留下上一版可确认草稿，避免保存过时或不完整的数据。
+            importStateManager.clear(userId);
+            ObjectNode review = objectMapper.createObjectNode();
+            review.put("action", "parse");
+            review.put("status", "needs_review");
+            review.put("recognition_issues", issues);
+            review.put("message", "图片课表仍有待核对信息，尚未保存。请补全或纠正后重新预览完整课表。");
+            if (args.path("courses").isArray()) review.set("courses", args.path("courses"));
+            return review.toString();
+        }
         CourseImportStateManager.Phase phase = importStateManager.getPhase(userId);
         if (phase == CourseImportStateManager.Phase.NONE) {
             log.debug("直接解析课表（无前置 import 状态）| userId={}", userId);
@@ -155,6 +170,7 @@ public class CourseImportFlowActions {
         result.put("action", "parse");
         result.put("status", "preview");
         result.put("count", courses.size());
+        result.put("preview_table", formatPreviewTable(courses));
         result.set("internal_conflicts", objectMapper.valueToTree(internalConflicts));
 
         int currentWeek = resolveCurrentWeek(userId);
@@ -211,6 +227,55 @@ public class CourseImportFlowActions {
         result.put("message", "已识别出以下 " + courses.size() + " 门课程" + conflictSuffix
                 + "，尚未保存。确认后替换目标学期完整课表（无学期信息时仅替换未绑定学期记录），其他学期保留。请确认或取消。");
         return result.toString();
+    }
+
+    /** 图片缺失字段不走解析器的默认值，避免把不确定的周次或节次变成事实。 */
+    private String validateImageCourses(JsonNode rows) {
+        if (!rows.isArray() || rows.isEmpty()) return "未获得完整课程列表，请重新识别清晰的课表图片";
+        List<String> problems = new ArrayList<>();
+        String[] numericFields = {"day_of_week", "start_period", "end_period", "start_week", "end_week"};
+        int index = 0;
+        for (JsonNode row : rows) {
+            index++;
+            String label = "第" + index + "条课程";
+            if (!row.path("course_name").isTextual() || row.path("course_name").asText().isBlank()) {
+                problems.add(label + "缺少课程名称");
+            }
+            boolean missing = false;
+            for (String field : numericFields) {
+                if (!row.path(field).isIntegralNumber() || !row.path(field).canConvertToInt()) {
+                    problems.add(label + "的" + field + "不明确");
+                    missing = true;
+                }
+            }
+            if (!missing && (row.path("day_of_week").asInt() < 1 || row.path("day_of_week").asInt() > 7
+                    || row.path("start_period").asInt() < 1 || row.path("end_period").asInt() > 30
+                    || row.path("end_period").asInt() < row.path("start_period").asInt()
+                    || row.path("start_week").asInt() < 1 || row.path("end_week").asInt() > 60
+                    || row.path("end_week").asInt() < row.path("start_week").asInt())) {
+                problems.add(label + "的星期、节次或教学周范围无效");
+            }
+            if (!List.of("ALL", "ODD", "EVEN").contains(row.path("week_type").asText())) {
+                problems.add(label + "的单双周信息不明确");
+            }
+        }
+        return String.join("；", problems);
+    }
+
+    private String formatPreviewTable(List<CourseEntity> courses) {
+        StringBuilder table = new StringBuilder("| 星期 | 节次 | 课程 | 教学周 | 教师 | 教室 |\n| --- | --- | --- | --- | --- | --- |\n");
+        courses.stream().sorted(java.util.Comparator.comparingInt(CourseEntity::getDayOfWeek)
+                .thenComparingInt(CourseEntity::getStartPeriod).thenComparingInt(CourseEntity::getStartWeek))
+                .forEach(course -> table.append("| ").append(course.getDayDisplay()).append(" | ")
+                        .append(course.getPeriodDisplay()).append(" | ").append(tableCell(course.getCourseName()))
+                        .append(" | ").append(course.getWeekDisplay()).append(" | ")
+                        .append(tableCell(course.getTeacher())).append(" | ").append(tableCell(course.getClassroom())).append(" |\n"));
+        return table.toString();
+    }
+
+    private String tableCell(String value) {
+        return value == null ? "" : value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                .replace("|", "&#124;").replace("\r", " ").replace("\n", " ");
     }
 
     /**

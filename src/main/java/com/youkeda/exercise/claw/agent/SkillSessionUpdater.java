@@ -35,7 +35,7 @@ public class SkillSessionUpdater {
         SkillSession session = existing.orElseGet(() -> SkillSession.create(userId));
 
         switch (routing.action()) {
-            case ACTIVATE, SWITCH -> session = session.withActiveSkill(routing.primarySkill());
+            case ACTIVATE, SWITCH, MULTI_ACTIVATE -> session = session.withActiveSkill(routing.primarySkill());
             case CONTINUE -> {
                 if (routing.confidence() >= 0.3) {
                     session = session.withResetInactivity();

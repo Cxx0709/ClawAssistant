@@ -11,8 +11,28 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.*;
 
 class SkillRegistryTest {
+    @Test
+    void requiredToolOwnerWinsOverOptionalConsumerRegardlessOfRegistrationOrder() {
+        SkillDefinition travel = new SkillDefinition("travel", "travel", 5, Set.of(), Set.of(),
+                Set.of("weather_query"), null, null, null, null, true);
+        SkillDefinition weather = new SkillDefinition("weather", "weather", 2, Set.of(), Set.of("weather_query"),
+                Set.of(), null, null, null, null, true);
+        SkillsProperties properties = new SkillsProperties();
+        Map<String, SkillDefinition> definitions = new LinkedHashMap<>();
+        definitions.put("travel", travel);
+        definitions.put("weather", weather);
+        properties.setSkills(definitions);
+        ToolRegistry tools = mock(ToolRegistry.class);
+        com.youkeda.exercise.claw.ai.llm.ToolDefinition definition = mock(com.youkeda.exercise.claw.ai.llm.ToolDefinition.class);
+        when(definition.name()).thenReturn("weather_query");
+        when(tools.getAllDefinitions()).thenReturn(java.util.List.of(definition));
+        SkillRegistry registry = new SkillRegistry(properties, tools);
+        registry.init();
+        assertEquals("weather", registry.resolveSkillForTool("weather_query"));
+    }
 
     @Test
     void shouldUseConfigurationMapKeyAsSkillName() {

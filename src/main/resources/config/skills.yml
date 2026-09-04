@@ -21,7 +21,6 @@
     - web_search
     - holiday_check
     - goal_manage
-    - scout_feedback
 
   skills:
     common:
@@ -59,6 +58,7 @@
 
     travel:
       enabled: true
+      description: 规划、调整用户的旅行行程、预算和方案，续接目的地、人数、日期等补充信息；旅游知识讲解、一般写作和闲聊不属于本技能。
       priority: 5
       tags: [出行, 方案]
       requiredTools:
@@ -85,12 +85,12 @@
 
     transport:
       enabled: true
+      description: 交通方式推荐、路线比较，续接出发地、目的地等补充信息；一般写作、闲聊和交通知识解释不属于本技能。
       priority: 4
-      tags: [出行, 打车]
+      tags: [出行, 交通]
       requiredTools:
         - transport_recommend
       optionalTools:
-        - didi_ride
         - map_search_place
         - map_route_planning
         - map_distance_calculate
@@ -105,6 +105,7 @@
 
     weather:
       enabled: true
+      description: 查询具体地点和日期的天气、气温与降水，支持地点和日期的省略追问；天气知识讲解、天气相关写作和闲聊不属于本技能。
       priority: 2
       tags: [天气]
       requiredTools: [weather_query]
@@ -128,25 +129,6 @@
         topK: 0
         minScore: 0.0
         maxContextChars: 0
-
-    information-scout:
-      enabled: true
-      priority: 3
-      description: 创建信息猎手持续关注任务，后台定期发现与用户兴趣、项目和目标相关的高价值资讯并推送；仅在用户明确要求持续关注/订阅新动态、趋势或机会时触发，现场即时查询请用 web_search。
-      tags: [信息, 搜索]
-      requiredTools: []
-      optionalTools: []
-      systemPromptResource: prompts/skills/information-scout.txt
-      triggerPolicyName: scoutTriggerPolicy
-      execution:
-        mode: BACKGROUND_WORKFLOW
-        executorName: informationScoutSkillExecutor
-      knowledge:
-        enabled: false
-        namespaces: [scout]
-        topK: 3
-        minScore: 0.50
-        maxContextChars: 6000
 
     image:
       enabled: true
@@ -179,13 +161,3 @@
         topK: 0
         minScore: 0.0
         maxContextChars: 0
-
-  workflows:
-    scoutWorkflow:
-      workerName: scoutWorkflowWorker
-      timeout: 30m
-      retryMax: 3
-      cron: 0 0 8 * * *
-
-  skill-workflow-bindings:
-    information-scout: scoutWorkflow

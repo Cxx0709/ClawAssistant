@@ -17,8 +17,7 @@ import static org.mockito.Mockito.when;
  * Skill 会话卡死修复测试：验证 handleContinuation 的低置信度释放机制。
  *
  * <p>场景：用户进入某个 Skill（如 transport）后，后续消息与旧 skill 弱关联时
- * 先 CONTINUE 计数（inactivityCount+1），连续低置信度达到阈值后才 DEACTIVATE，
- * 避免「估价后追问校区/车型」这类多轮澄清被误判为无关而中断，同时防止 skill 长期占用。
+ * 本轮走 common，以 NONE 保留可恢复的旧任务；连续无关消息达到阈值后再释放旧状态。
  */
 class SkillRouterSessionReleaseTest {
 
@@ -118,12 +117,9 @@ class SkillRouterSessionReleaseTest {
         SkillRouter router = routerWith(registry, store, policyFactory);
         SkillRoutingResult result = router.route("帮我写一个AI新闻总结", "owner");
 
-        // 第一条低置信度消息：CONTINUE 保留 transport（计数 inactivityCount+1），
-        // 避免「估价后追问校区/车型」这类多轮澄清被误判为无关而中断。
-        assertEquals(SkillRoutingResult.SkillRoutingAction.CONTINUE, result.action(),
+        assertEquals(SkillRoutingResult.SkillRoutingAction.NONE, result.action(),
                 "第一条低置信度消息不应立刻释放 transport");
-        assertEquals("transport", result.primarySkill(),
-                "低置信度计数期间应继续保留 transport");
+        assertEquals("common", result.primarySkill(), "保留状态不应让本轮继续使用 transport");
     }
 
     @Test
@@ -178,12 +174,8 @@ class SkillRouterSessionReleaseTest {
         SkillRouter router = routerWith(registry, store, policyFactory);
         SkillRoutingResult result = router.route("你好", "owner");
 
-        // 第一条低置信度消息：CONTINUE 保留 transport（计数），
-        // 连续达到 LOW_CONFIDENCE_RELEASE_LIMIT 后才 DEACTIVATE 释放。
-        assertEquals(SkillRoutingResult.SkillRoutingAction.CONTINUE, result.action(),
-                "「你好」第一条应 CONTINUE 计数，而非立刻释放 transport");
-        assertEquals("transport", result.primarySkill(),
-                "计数期间应继续保留 transport");
+        assertEquals(SkillRoutingResult.SkillRoutingAction.NONE, result.action());
+        assertEquals("common", result.primarySkill(), "闲聊应立即由通用能力处理");
     }
 
 
@@ -206,9 +198,10 @@ class SkillRouterSessionReleaseTest {
 
         SkillRouter router = routerWith(registry, store, policyFactory);
 
-        // 连续 3 次无关请求（每次按 AgentExecutor.updateSession 语义更新会话）
-        for (int i = 0; i < 3; i++) {
+        // 五轮保留窗口结束后释放旧状态，每轮都使用 common。
+        for (int i = 0; i < 6; i++) {
             SkillRoutingResult result = router.route("无关请求" + i, "owner");
+            assertEquals("common", result.primarySkill());
             session = applyRouting(result, session);
             when(store.find("owner")).thenReturn(Optional.of(session));
         }

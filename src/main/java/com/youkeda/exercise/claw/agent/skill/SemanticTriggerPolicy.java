@@ -191,11 +191,6 @@ public class SemanticTriggerPolicy implements SkillTriggerPolicy {
                 expanded.add("这部番好看吗");
                 expanded.add("追一下最新一集");
             }
-            case "information-scout" -> {
-                expanded.add("帮我关注这个领域的最新消息");
-                expanded.add("定期搜集相关资讯");
-                expanded.add("有什么新的动态");
-            }
             case "image" -> {
                 expanded.add("帮我生成一张图片");
                 expanded.add("画一幅画");

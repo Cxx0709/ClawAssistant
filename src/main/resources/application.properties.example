@@ -169,16 +169,6 @@ skill.knowledge.management.max-source-chars=512
 skill.knowledge.management.max-version-chars=64
 
 # ============================================
-# Didi MCP Configuration
-# ============================================
-# 滴滴出行 MCP Server（JSON-RPC 2.0 协议）
-# 注册获取 API Key: https://mcp.didichuxing.com
-# 沙箱环境返回 Mock 数据，不影响真实账户
-didi.mcp.base-url=https://mcp.didichuxing.com/mcp-servers-sandbox
-didi.mcp.api-key=
-didi.mcp.timeout=15000
-
-# ============================================
 # Information Scout Agent（信息猎手）
 # ============================================
 # 总开关

@@ -30,19 +30,6 @@ class SkillsPropertiesYamlBindingTest {
     }
 
     @Test
-    void bindsBackgroundWorkflowExecutionMetadataFromYaml() throws Exception {
-        SkillsProperties properties = bindSkillsProperties();
-        SkillDefinition scout = properties.getSkills().get("information-scout");
-
-        assertNotNull(scout);
-        assertNotNull(scout.execution());
-        assertEquals(SkillExecutionMode.BACKGROUND_WORKFLOW, scout.execution().mode());
-        assertEquals("informationScoutSkillExecutor", scout.execution().executorName());
-        assertEquals("scoutWorkflow",
-                properties.getSkillWorkflowBindings().get("information-scout"));
-    }
-
-    @Test
     void bindsCampusSkillWithScheduleToolsFromYaml() throws Exception {
         SkillsProperties properties = bindSkillsProperties();
         SkillDefinition campus = properties.getSkills().get("campus");
@@ -105,13 +92,11 @@ class SkillsPropertiesYamlBindingTest {
     }
 
     @Test
-    void bindsTransportSkillWithRideToolFromYaml() throws Exception {
+    void bindsTransportSkillWithRecommendToolFromYaml() throws Exception {
         SkillsProperties properties = bindSkillsProperties();
         SkillDefinition transport = properties.getSkills().get("transport");
 
         assertNotNull(transport);
-        assertTrue(transport.allowedTools().contains("didi_ride"),
-                "transport 必须声明 didi_ride，且 DidiRideTool.getName() 必须一致（见 DidiRideToolTest）");
         assertTrue(transport.allowedTools().contains("transport_recommend"));
     }
 
