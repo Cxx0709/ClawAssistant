@@ -83,14 +83,8 @@ public class PendingToolCoordinator {
         if (pending.status() != PendingToolAction.Status.PENDING_CONFIRMATION) {
             return Result.notHandled();
         }
-
-        // 过期检查
         if (pending.isExpired()) {
-            PendingToolAction expired = pending.withExpired();
-            store.put(userId, expired);
-            log.info("待确认操作已过期 | id={} | tool={}", pending.id(), pending.toolName());
-            return new Result(Result.Type.EXPIRED, expired, null,
-                    "操作已超时（超过" + (PendingToolAction.DEFAULT_TTL_SECONDS / 60) + "分钟），请重新发起。");
+            return expired(userId, pending);
         }
 
         String normalized = userMessage.replaceAll("\\s+", "").toLowerCase();
@@ -102,22 +96,63 @@ public class PendingToolCoordinator {
         boolean isCancel = CANCEL_KEYWORDS.stream()
                 .anyMatch(normalized::contains);
 
-        if (isCancel) {
-            store.remove(userId);
-            log.info("用户取消待确认操作 | id={} | tool={}", pending.id(), pending.toolName());
-            return new Result(Result.Type.CANCELLED, pending.withStatus(PendingToolAction.Status.CANCELLED),
-                    null, "已取消" + toolDisplayName(pending.toolName()) + "操作。");
-        }
-
-        if (isConfirm) {
-            // 执行原始 tool call
-            PendingToolAction confirmed = pending.withStatus(PendingToolAction.Status.CONFIRMED);
-            store.put(userId, confirmed);
-            return executePending(confirmed, userId);
-        }
+        if (isCancel) return cancel(userId);
+        if (isConfirm) return confirm(userId);
 
         // 不匹配 → 让 LLM 继续处理
         return Result.notHandled();
+    }
+
+    /**
+     * 直接确认当前用户的待确认操作（对话关键词确认或前端按钮确认共用）。
+     *
+     * <p>确认后执行原始 tool call，不依赖 LLM 重新生成。
+     *
+     * @return 执行结果；无待确认操作或状态不合法时返回 {@link Result#notHandled()}
+     */
+    public Result confirm(String userId) {
+        if (userId == null) return Result.notHandled();
+        PendingToolAction pending = store.get(userId);
+        if (pending == null) return Result.notHandled();
+        if (pending.status() != PendingToolAction.Status.PENDING_CONFIRMATION) {
+            return Result.notHandled();
+        }
+        if (pending.isExpired()) {
+            return expired(userId, pending);
+        }
+        // 执行原始 tool call
+        PendingToolAction confirmed = pending.withStatus(PendingToolAction.Status.CONFIRMED);
+        store.put(userId, confirmed);
+        return executePending(confirmed, userId);
+    }
+
+    /**
+     * 取消当前用户的待确认操作。
+     *
+     * @return 取消结果；无待确认操作或状态不合法时返回 {@link Result#notHandled()}
+     */
+    public Result cancel(String userId) {
+        if (userId == null) return Result.notHandled();
+        PendingToolAction pending = store.get(userId);
+        if (pending == null) return Result.notHandled();
+        if (pending.status() != PendingToolAction.Status.PENDING_CONFIRMATION) {
+            return Result.notHandled();
+        }
+        if (pending.isExpired()) {
+            return expired(userId, pending);
+        }
+        store.remove(userId);
+        log.info("用户取消待确认操作 | id={} | tool={}", pending.id(), pending.toolName());
+        return new Result(Result.Type.CANCELLED, pending.withStatus(PendingToolAction.Status.CANCELLED),
+                null, "已取消" + displayName(pending.toolName()) + "操作。");
+    }
+
+    private Result expired(String userId, PendingToolAction pending) {
+        PendingToolAction expired = pending.withExpired();
+        store.put(userId, expired);
+        log.info("待确认操作已过期 | id={} | tool={}", pending.id(), pending.toolName());
+        return new Result(Result.Type.EXPIRED, expired, null,
+                "操作已超时（超过" + (PendingToolAction.DEFAULT_TTL_SECONDS / 60) + "分钟），请重新发起。");
     }
 
     // ==================== 执行待确认工具 ====================
@@ -155,7 +190,7 @@ public class PendingToolCoordinator {
                     action.id(), action.toolName(), e.getMessage(), e);
             return new Result(Result.Type.FAILED,
                     action.withStatus(PendingToolAction.Status.EXECUTED), null,
-                    "执行" + toolDisplayName(action.toolName()) + "操作时出错："
+                    "执行" + displayName(action.toolName()) + "操作时出错："
                             + (e.getMessage() != null ? e.getMessage() : "未知错误"));
         }
     }
@@ -212,7 +247,7 @@ public class PendingToolCoordinator {
 
     // ==================== 工具方法 ====================
 
-    private static String toolDisplayName(String toolName) {
+    public static String displayName(String toolName) {
         return switch (toolName) {
             case "file_delete" -> "删除文件";
             case "file_update" -> "修改文件";
@@ -225,7 +260,7 @@ public class PendingToolCoordinator {
     }
 
     private String formatConfirmationResult(String toolName, String rawResult) {
-        String display = toolDisplayName(toolName);
+        String display = displayName(toolName);
         if (rawResult != null && rawResult.contains("\"status\":\"SUCCESS\"")
                 || rawResult != null && rawResult.contains("\"status\":\"success\"")) {
             return display + "操作已完成。" + extractSummary(rawResult);

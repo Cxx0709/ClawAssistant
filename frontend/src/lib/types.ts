@@ -11,6 +11,14 @@ export type StreamEvent =
 
 // ===== 对话模型 =====
 
+export interface PendingToolInfo {
+  id: string;
+  toolName: string;
+  displayName: string;
+  argsPreview?: string;
+  expireAt?: string;
+}
+
 export type ToolState = 'running' | 'ok' | 'err';
 
 export interface ToolItem {

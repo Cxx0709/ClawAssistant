@@ -3,6 +3,7 @@ import BrandMark from '../components/BrandMark';
 import Markdown from '../components/Markdown';
 import RightRail from '../components/RightRail';
 import ToolTrace from '../components/ToolTrace';
+import PendingConfirmation from '../components/PendingConfirmation';
 import ConversationSidebar from '../components/ConversationSidebar';
 import Composer from '../components/Composer';
 import MemoryNotice from '../components/MemoryNotice';
@@ -20,9 +21,12 @@ import {
   fetchStatus,
   purgeConversation,
   updateConversation,
+  confirmPendingTool,
+  cancelPendingTool,
+  fetchPendingTool,
 } from '../lib/api';
 import { consumeStream } from '../lib/sse';
-import type { AppUser, Artifact, ChatMsg, Conversation, StreamEvent, SystemStatus } from '../lib/types';
+import type { AppUser, Artifact, ChatMsg, Conversation, PendingToolInfo, StreamEvent, SystemStatus } from '../lib/types';
 
 const SUGGESTIONS = [
   '帮我规划一趟周末杭州两日游',
@@ -54,6 +58,10 @@ export default function ChatPage({ onHome, user, onLogout }: {
   const [olderLoading, setOlderLoading] = useState(false);
   const [undoDelete, setUndoDelete] = useState<Conversation | null>(null);
   const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth >= 768);
+  // 待确认的高风险工具（Phase 5 前端确认按钮）
+  const [pending, setPending] = useState<PendingToolInfo | null>(null);
+  const [pendingBusy, setPendingBusy] = useState(false);
+  const [pendingNotice, setPendingNotice] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const streamIdRef = useRef<string | null>(null);
@@ -90,6 +98,22 @@ export default function ChatPage({ onHome, user, onLogout }: {
     return () => {
       alive = false;
     };
+  }, []);
+
+  // 待确认高风险工具轮询：发现 SafetyPolicy 拦截的操作后弹出确认卡片
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      try {
+        const data = await fetchPendingTool();
+        if (alive) setPending(data.pending);
+      } catch {
+        // 网络抖动时保留当前状态，下一轮再试
+      }
+    };
+    void tick();
+    const timer = window.setInterval(() => void tick(), 3000);
+    return () => { alive = false; window.clearInterval(timer); };
   }, []);
 
   const reloadConversations = useCallback(async () => {
@@ -553,6 +577,41 @@ export default function ChatPage({ onHome, user, onLogout }: {
     abortRef.current?.abort();
   }, []);
 
+  const confirmPending = useCallback(async () => {
+    if (pendingBusy || !pending) return;
+    setPendingBusy(true);
+    try {
+      const res = await confirmPendingTool();
+      setPending(null);
+      setPendingNotice(res.reply || '操作已确认执行。');
+    } catch (reason) {
+      setPendingNotice((reason as Error)?.message || '确认失败，请稍后再试');
+    } finally {
+      setPendingBusy(false);
+    }
+  }, [pending, pendingBusy]);
+
+  const cancelPending = useCallback(async () => {
+    if (pendingBusy || !pending) return;
+    setPendingBusy(true);
+    try {
+      const res = await cancelPendingTool();
+      setPending(null);
+      setPendingNotice(res.reply || '操作已取消。');
+    } catch (reason) {
+      setPendingNotice((reason as Error)?.message || '取消失败，请稍后再试');
+    } finally {
+      setPendingBusy(false);
+    }
+  }, [pending, pendingBusy]);
+
+  // 确认/取消结果提示自动消失
+  useEffect(() => {
+    if (!pendingNotice) return;
+    const timer = window.setTimeout(() => setPendingNotice(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [pendingNotice]);
+
   const connected = status?.appReady;
 
   return (
@@ -705,6 +764,21 @@ export default function ChatPage({ onHome, user, onLogout }: {
           {/* 输入区 */}
           <div className="shrink-0 border-t border-line/70 bg-gradient-to-t from-canvas via-canvas to-canvas/90 pb-3 pt-3">
             <div className="mx-auto w-full max-w-[760px] px-4 sm:px-6">
+              {pendingNotice && (
+                <div className="mb-2 flex items-center gap-2 rounded-xl border border-[#d7e8dc] bg-[#f0f8f2] px-3.5 py-2.5 text-[13px] text-[#1f7a44]">
+                  <span className="shrink-0 font-semibold">✓</span>
+                  <span className="min-w-0 flex-1">{pendingNotice}</span>
+                  <button type="button" onClick={() => setPendingNotice(null)} className="shrink-0 text-ink-faint hover:text-ink" aria-label="关闭">×</button>
+                </div>
+              )}
+              {pending && (
+                <PendingConfirmation
+                  pending={pending}
+                  busy={pendingBusy}
+                  onConfirm={() => void confirmPending()}
+                  onCancel={() => void cancelPending()}
+                />
+              )}
               <MemoryNotice conversationId={conversationId} refreshToken={railToken} />
               <Composer
                 key={conversationId}

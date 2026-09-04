@@ -8,6 +8,7 @@ import type {
   SystemStatus,
   Conversation,
   HistoryMessage,
+  PendingToolInfo,
   ConversationPage,
   MessagePage,
 } from './types';
@@ -232,6 +233,34 @@ export async function fetchNotifications(): Promise<NotificationItem[]> {
 
 export async function markNotificationRead(id: number): Promise<void> {
   await apiFetch(`/api/notifications/${id}/read`, { method: 'POST' });
+}
+
+// ===== 待确认的高风险工具（Phase 5 前端确认） =====
+
+export interface PendingToolResponse {
+  pending: PendingToolInfo | null;
+}
+
+export interface PendingActResponse {
+  status: string;
+  reply: string;
+  rawResult?: string;
+}
+
+export async function fetchPendingTool(): Promise<PendingToolResponse> {
+  return getJson<PendingToolResponse>('/api/tools/pending').catch(() => ({ pending: null }));
+}
+
+export async function confirmPendingTool(): Promise<PendingActResponse> {
+  const res = await apiFetch('/api/tools/pending/confirm', { method: 'POST' });
+  if (!res.ok) throw new Error((await readError(res)) || '确认失败，请稍后再试');
+  return (await res.json()) as PendingActResponse;
+}
+
+export async function cancelPendingTool(): Promise<PendingActResponse> {
+  const res = await apiFetch('/api/tools/pending/cancel', { method: 'POST' });
+  if (!res.ok) throw new Error((await readError(res)) || '取消失败，请稍后再试');
+  return (await res.json()) as PendingActResponse;
 }
 
 async function readError(res: Response): Promise<string> {
