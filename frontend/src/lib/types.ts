@@ -66,6 +66,22 @@ export interface Conversation {
   createdAt: number;
   updatedAt: number;
   deletedAt?: number | null;
+  roleId?: string | null;
+}
+
+export interface AiRole {
+  id: string;
+  userId: string;
+  name: string;
+  avatar?: string | null;
+  personality?: string | null;
+  background?: string | null;
+  speakingStyle?: string | null;
+  catchphrase?: string | null;
+  voiceAudioUrl?: string | null;
+  voiceId?: string | null;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface HistoryMessage {

@@ -33,7 +33,7 @@ public class ConversationService {
         String normalizedQuery = clean(query);
         StringBuilder sql = new StringBuilder("""
             SELECT id, title, pinned, archived, last_message_preview, created_at,
-                   COALESCE(last_message_at, updated_at) AS activity_at, deleted_at
+                   COALESCE(last_message_at, updated_at) AS activity_at, deleted_at, role_id
             FROM conversations
             WHERE user_id = ? AND archived = ?
         """);
@@ -75,14 +75,25 @@ public class ConversationService {
     }
 
     public Conversation create(String userId) {
+        return create(userId, null);
+    }
+
+    public Conversation create(String userId, String roleId) {
         String id = UUID.randomUUID().toString();
         long now = System.currentTimeMillis() / 1000;
         jdbc.update("""
             INSERT INTO conversations
             (id, user_id, title, title_source, last_message_preview, created_at, updated_at,
-             last_message_at, metadata_updated_at)
-            VALUES (?, ?, '新对话', 'AUTO', '', ?, ?, ?, ?)
-        """, id, userId, now, now, now, now);
+             last_message_at, metadata_updated_at, role_id)
+            VALUES (?, ?, '新对话', 'AUTO', '', ?, ?, ?, ?, ?)
+        """, id, userId, now, now, now, now, roleId);
+        return requireOwned(userId, id);
+    }
+
+    public Conversation updateRole(String userId, String id, String roleId) {
+        requireOwned(userId, id);
+        jdbc.update("UPDATE conversations SET role_id = ?, updated_at = ? WHERE user_id = ? AND id = ?",
+                roleId, System.currentTimeMillis() / 1000, userId, id);
         return requireOwned(userId, id);
     }
 
@@ -97,7 +108,7 @@ public class ConversationService {
         }
         List<Conversation> matches = jdbc.query("""
             SELECT id, title, pinned, archived, last_message_preview, created_at,
-                   COALESCE(last_message_at, updated_at) AS activity_at, deleted_at
+                   COALESCE(last_message_at, updated_at) AS activity_at, deleted_at, role_id
             FROM conversations WHERE user_id = ? AND id = ?
         """, (rs, rowNum) -> map(rs), userId, conversationId);
         if (matches.isEmpty()) {
@@ -163,10 +174,12 @@ public class ConversationService {
 
     private static Conversation map(java.sql.ResultSet rs) throws java.sql.SQLException {
         Number deleted = (Number) rs.getObject("deleted_at");
+        String roleId = null;
+        try { roleId = rs.getString("role_id"); } catch (Exception ignored) {}
         return new Conversation(rs.getString("id"), rs.getString("title"), rs.getBoolean("pinned"),
                 rs.getBoolean("archived"), rs.getString("last_message_preview"),
                 rs.getLong("created_at"), rs.getLong("activity_at"),
-                deleted == null ? null : deleted.longValue());
+                deleted == null ? null : deleted.longValue(), roleId);
     }
 
     private static String ftsQuery(String value) {

@@ -29,9 +29,12 @@ import {
   confirmPendingTool,
   cancelPendingTool,
   fetchPendingTool,
+  fetchRoles,
+  updateConversationRole,
+  synthesizeRoleVoice,
 } from '../lib/api';
 import { consumeStream } from '../lib/sse';
-import type { AppUser, Artifact, ChatMsg, Conversation, PendingToolInfo, StreamEvent, SystemStatus, ToolItem } from '../lib/types';
+import type { AiRole, AppUser, Artifact, ChatMsg, Conversation, PendingToolInfo, StreamEvent, SystemStatus, ToolItem } from '../lib/types';
 
 const SUGGESTIONS = [
   '帮我规划一趟周末杭州两日游',
@@ -40,10 +43,11 @@ const SUGGESTIONS = [
   '记住：咖啡只喝中杯',
 ];
 
-export default function ChatPage({ onHome, user, onLogout }: {
+export default function ChatPage({ onHome, user, onLogout, onGoRoles }: {
   onHome: () => void;
   user: AppUser;
   onLogout: () => void;
+  onGoRoles: () => void;
 }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [text, setText] = useState('');
@@ -80,6 +84,10 @@ export default function ChatPage({ onHome, user, onLogout }: {
   const [pending, setPending] = useState<PendingToolInfo | null>(null);
   const [pendingBusy, setPendingBusy] = useState(false);
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
+  // AI 角色相关
+  const [roles, setRoles] = useState<AiRole[]>([]);
+  const [roleSelectorOpen, setRoleSelectorOpen] = useState(false);
+  const [roleChanging, setRoleChanging] = useState(false);
 
   const workspaceArtifacts = useMemo(() => {
     const byId = new Map<string, Artifact>();
@@ -187,6 +195,15 @@ export default function ChatPage({ onHome, user, onLogout }: {
     return () => {
       alive = false;
     };
+  }, []);
+
+  // 加载 AI 角色列表
+  useEffect(() => {
+    let alive = true;
+    fetchRoles()
+      .then((data) => alive && setRoles(data))
+      .catch(() => {});
+    return () => { alive = false; };
   }, []);
 
   // 待确认高风险工具轮询：发现 SafetyPolicy 拦截的操作后弹出确认卡片
@@ -349,6 +366,33 @@ export default function ChatPage({ onHome, user, onLogout }: {
 
   const refreshRail = useCallback(() => setRailToken((t) => t + 1), []);
 
+
+  const handleChangeRole = async (roleId: string | null) => {
+    if (roleChanging) return;
+    setRoleChanging(true);
+    try {
+      if (!conversationId) {
+        // 新对话：先创建绑定角色的对话
+        const conv = await createConversation(roleId || undefined);
+        setConversationId(conv.id);
+        setHistoryRefresh((v) => v + 1);
+      } else {
+        // 已有对话：直接更新角色
+        await updateConversationRole(conversationId, roleId);
+        // 直接更新当前对话的 roleId，不依赖列表刷新
+        setConversations((prev) => prev.map((c) =>
+          c.id === conversationId ? { ...c, roleId } : c
+        ));
+        setHistoryRefresh((v) => v + 1);
+      }
+      setRoleSelectorOpen(false);
+    } catch (e) {
+      console.error('切换角色失败', e);
+      alert('切换角色失败：' + ((e as Error)?.message || '未知错误') + '\n请确认后端已重启');
+    } finally {
+      setRoleChanging(false);
+    }
+  };
   // 用户是否停在底部；决定后续更新是否自动跟随滚动
   const onScroll = () => {
     const el = scrollRef.current;
@@ -829,6 +873,87 @@ export default function ChatPage({ onHome, user, onLogout }: {
           </div>
         </div>
 
+        {/* AI 角色切换器 */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setRoleSelectorOpen(v => !v)}
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-line px-2.5 text-[12.5px] font-medium text-ink-soft transition-colors hover:bg-canvas-sub hover:text-ink sm:px-3"
+          >
+            <span className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full text-base">
+              {(() => {
+                const currentConv = conversations.find(item => item.id === conversationId);
+                const currentRole = roles.find(r => r.id === currentConv?.roleId);
+                if (!currentRole) return '🤖';
+                if (currentRole.avatar?.startsWith('data:image')) {
+                  return <img src={currentRole.avatar} alt={currentRole.name} className="h-full w-full object-cover" />;
+                }
+                return currentRole.avatar || currentRole.name?.charAt(0) || '🎭';
+              })()}
+            </span>
+            <span className="hidden max-w-[80px] truncate sm:inline">
+              {(() => {
+                const currentConv = conversations.find(item => item.id === conversationId);
+                const currentRole = roles.find(r => r.id === currentConv?.roleId);
+                return currentRole ? currentRole.name : '默认助手';
+              })()}
+            </span>
+            <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+
+          {roleSelectorOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setRoleSelectorOpen(false)} />
+              <div className="absolute left-0 top-full z-20 mt-1.5 w-56 overflow-hidden rounded-lg border border-line bg-white shadow-lg">
+                <div className="border-b border-line px-3 py-2 text-[11px] font-medium text-ink-faint">选择对话角色</div>
+                <button
+                  type="button"
+                  onClick={() => handleChangeRole(null)}
+                  disabled={roleChanging}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors hover:bg-canvas-sub disabled:opacity-50"
+                >
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-gray-200 to-gray-100 text-sm">🤖</span>
+                  <span className="flex-1">默认助手</span>
+                  {!conversations.find(item => item.id === conversationId)?.roleId && (
+                    <span className="text-xs text-brand">✓</span>
+                  )}
+                </button>
+                {roles.map(role => (
+                  <button
+                    key={role.id}
+                    type="button"
+                    onClick={() => handleChangeRole(role.id)}
+                    disabled={roleChanging}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors hover:bg-canvas-sub disabled:opacity-50"
+                  >
+                    <span className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-brand/20 to-brand/5 text-sm">
+                      {role.avatar?.startsWith('data:image') ? (
+                        <img src={role.avatar} alt={role.name} className="h-full w-full object-cover" />
+                      ) : (
+                        <span>{role.avatar || role.name?.charAt(0) || '?'}</span>
+                      )}
+                    </span>
+                    <span className="flex-1 truncate">{role.name}</span>
+                    {conversations.find(item => item.id === conversationId)?.roleId === role.id && (
+                      <span className="text-xs text-brand">✓</span>
+                    )}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={onGoRoles}
+                  className="flex w-full items-center gap-2.5 border-t border-line px-3 py-2.5 text-left text-sm text-ink-soft transition-colors hover:bg-canvas-sub"
+                >
+                  <span className="text-sm">⚙️</span>
+                  <span>管理角色</span>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
         <p className="absolute left-1/2 hidden max-w-[24vw] -translate-x-1/2 truncate text-[13px] font-medium text-ink-soft xl:block">
           {conversations.find((item) => item.id === conversationId)?.title || '新对话'}
         </p>
@@ -961,6 +1086,7 @@ export default function ChatPage({ onHome, user, onLogout }: {
               <MessageList
                 messages={messages}
                 onToggleTrace={toggleTrace}
+                roleId={conversations.find(item => item.id === conversationId)?.roleId ?? undefined}
               />
             </div>
           </div>
@@ -1109,10 +1235,26 @@ function EmptyState({ onPick }: { onPick: (s: string) => void }) {
 function MessageList({
   messages,
   onToggleTrace,
+  roleId,
 }: {
   messages: ChatMsg[];
   onToggleTrace: (id: string) => void;
+  roleId?: string;
 }) {
+  const playVoice = async (text: string) => {
+    if (!text || !text.trim()) return;
+    try {
+      const blob = await synthesizeRoleVoice(roleId || 'default', text);
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      audio.play();
+    } catch (e) {
+      console.error('语音播放失败', e);
+      alert('语音播放失败，请稍后重试');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {messages.map((m) =>
@@ -1145,7 +1287,23 @@ function MessageList({
             {m.streaming && !m.content && !m.errorText ? (
               <TypingDots action={executionLabel(m)} />
             ) : (
-              m.content && <Markdown content={m.content} />
+              m.content && (
+                <div>
+                  <Markdown content={m.content} />
+                  <button
+                    onClick={() => playVoice(m.content)}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[#e0d8f0] bg-[#f8f5ff] px-3 py-1.5 text-xs text-[#6c5ce7] hover:bg-[#efe9ff] transition-colors"
+                    title="语音播放"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                    </svg>
+                    语音播放
+                  </button>
+                </div>
+              )
             )}
             {!!(m.content || !m.streaming) && !!(m.runId || m.tools?.length || m.errorText) && (
               <p role="status" className={`mt-2 text-xs ${executionState(m) === 'failed' ? 'text-red-700' : 'text-ink-soft'}`}>

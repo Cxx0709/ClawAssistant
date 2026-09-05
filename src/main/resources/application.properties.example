@@ -67,8 +67,8 @@ voice.api-key=
 voice.asr-base-url=https://dashscope.aliyuncs.com/api/v1/services/audio/transcription/transcription
 voice.asr-model=paraformer-v2
 voice.tts-base-url=https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer
-voice.tts-model=cosyvoice-v2
-voice.tts-voice=longxiaochun_v2
+voice.tts-model=cosyvoice-v3-flash
+voice.tts-voice=longanyang
 
 # ============================================
 # File Parse Configuration

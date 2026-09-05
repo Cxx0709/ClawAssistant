@@ -2,6 +2,7 @@ package com.youkeda.exercise.claw.agent;
 
 import com.youkeda.exercise.claw.ai.llm.LLMClient;
 import com.youkeda.exercise.claw.ai.retrieval.SkillKnowledgeService;
+import com.youkeda.exercise.claw.role.AiRole;
 import com.youkeda.exercise.claw.skill.SkillDefinition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,7 +14,7 @@ import java.time.format.DateTimeFormatter;
  * 动态 system prompt 构建器。
  *
  * <p>从 {@code ReActAgentExecutor} 拆出：基础 prompt + 当前时间 + Active Skill 上下文
- * + RAG 知识库上下文。非 Spring bean，由 {@code ReActAgentExecutor} 构造时用已有依赖创建。
+ * + RAG 知识库上下文 + AI 角色设定。非 Spring bean，由 {@code ReActAgentExecutor} 构造时用已有依赖创建。
  */
 public class SystemPromptBuilder {
 
@@ -28,10 +29,16 @@ public class SystemPromptBuilder {
     }
 
     /**
-     * 构建动态 system prompt：基础 prompt + Active Skill 上下文。
+     * 构建动态 system prompt：基础 prompt + AI 角色设定 + 当前时间 + Active Skill 上下文。
      */
-    public String build(AgentContext context, SkillDefinition activeSkill) {
+    public String build(AgentContext context, SkillDefinition activeSkill, AiRole role) {
         StringBuilder sb = new StringBuilder();
+
+        // AI 角色设定优先注入，让大模型首先进入角色
+        if (role != null) {
+            sb.append(role.toSystemPrompt());
+        }
+
         sb.append(llmClient.getSystemPrompt()).append("\n\n");
 
         // 注入当前系统时间，供 LLM 判断「今晚/明天/已过去」等时间相关表述
@@ -62,6 +69,13 @@ public class SystemPromptBuilder {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * 兼容旧调用：无角色版本。
+     */
+    public String build(AgentContext context, SkillDefinition activeSkill) {
+        return build(context, activeSkill, null);
     }
 
     /**

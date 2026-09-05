@@ -36,6 +36,10 @@ import com.youkeda.exercise.claw.skill.SkillRegistry;
 import com.youkeda.exercise.claw.skill.SkillsProperties;
 import com.youkeda.exercise.claw.agent.skill.*;
 import com.youkeda.exercise.claw.identity.UserExecutionContext;
+import com.youkeda.exercise.claw.role.AiRole;
+import com.youkeda.exercise.claw.role.AiRoleRepository;
+import com.youkeda.exercise.claw.web.conversation.ConversationService;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * ReAct 模式 Agent 执行器
@@ -72,6 +76,25 @@ public class ReActAgentExecutor implements AgentExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(ReActAgentExecutor.class);
 
+    /**
+     * 根据 conversationId 解析当前对话绑定的 AI 角色。
+     * conversationId 为空或未绑定角色时返回 null（走默认助手）。
+     */
+    private AiRole resolveActiveRole(AgentContext context) {
+        String conversationId = context.getConversationId();
+        if (conversationId == null || conversationId.isBlank() || aiRoleRepository == null || conversationService == null) {
+            return null;
+        }
+        try {
+            var conversation = conversationService.requireOwned(context.getUserId(), conversationId);
+            if (conversation.roleId() == null || conversation.roleId().isBlank()) return null;
+            return aiRoleRepository.findById(conversation.roleId()).orElse(null);
+        } catch (Exception e) {
+            log.debug("解析 AI 角色失败 | conversationId={} | error={}", conversationId, e.getMessage());
+            return null;
+        }
+    }
+
     private static final String ERROR_REPLY = "抱歉，AI 服务暂时不可用，请稍后再试。";
 
     public static final String SILENT_REPLY = "__HANDLED_WITHOUT_USER_REPLY__";
@@ -97,6 +120,11 @@ public class ReActAgentExecutor implements AgentExecutor {
     private final ExecutionLoop executionLoop;
     private final CommonCapabilityRegistry commonCapabilityRegistry;
     private final PendingToolCoordinator pendingToolCoordinator;
+
+    @Autowired
+    private AiRoleRepository aiRoleRepository;
+    @Autowired
+    private ConversationService conversationService;
 
     // ==== 批次 2 拆分出的内部 helper（非 Spring bean，构造内用已有依赖创建）====
     private final SystemPromptBuilder systemPromptBuilder;
@@ -272,8 +300,9 @@ public class ReActAgentExecutor implements AgentExecutor {
         log.debug("[Tool Assembly] skillTools: {}", skillTools);
         log.debug("[Tool Assembly] finalTools ({} total): {}", effectiveTools.size(), effectiveTools);
 
-        // Build dynamic system prompt
-        String systemPrompt = systemPromptBuilder.build(context, activeSkill);
+        // Build dynamic system prompt（注入 AI 角色设定）
+        AiRole aiRole = resolveActiveRole(context);
+        String systemPrompt = systemPromptBuilder.build(context, activeSkill, aiRole);
 
         // Load PlanState
         PlanState planState = context.getPlanState() != null

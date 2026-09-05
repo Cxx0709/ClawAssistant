@@ -36,12 +36,12 @@ public class VoiceProperties {
     /**
      * TTS 模型名称
      */
-    private String ttsModel = "cosyvoice-v2";
+    private String ttsModel = "cosyvoice-v3-flash";
 
     /**
-     * TTS 默认音色（cosyvoice-v2 支持：longxiaochun_v2 等）
+     * TTS 默认音色（cosyvoice-v3-flash 支持：longanyang 等）
      */
-    private String ttsVoice = "longxiaochun_v2";
+    private String ttsVoice = "longanyang";
 
     public String getApiKey() {
         return apiKey;

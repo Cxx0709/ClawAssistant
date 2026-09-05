@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -21,6 +22,12 @@ public class SecurityConfig {
     }
 
     @Bean
+    WebSecurityCustomizer webSecurityCustomizer() {
+        // 完全忽略 /voices/** 路径，不做任何认证检查（供 DashScope 下载音频样本）
+        return (web) -> web.ignoring().requestMatchers("/voices/**");
+    }
+
+    @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, ObjectMapper mapper) throws Exception {
         CookieCsrfTokenRepository csrf = CookieCsrfTokenRepository.withHttpOnlyFalse();
         csrf.setCookiePath("/");
@@ -28,7 +35,7 @@ public class SecurityConfig {
         http
                 .csrf(config -> config.csrfTokenRepository(csrf))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/", "/index.html", "/assets/**", "/favicon.ico").permitAll()
+                        .requestMatchers("/", "/index.html", "/assets/**", "/favicon.ico", "/voices/**").permitAll()
                         .requestMatchers("/api/auth/csrf", "/api/auth/setup-status", "/api/auth/setup",
                                 "/api/auth/register", "/api/auth/login").permitAll()
                         .anyRequest().authenticated())
