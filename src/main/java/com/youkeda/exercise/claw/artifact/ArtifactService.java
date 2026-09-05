@@ -75,7 +75,7 @@ public class ArtifactService {
                     content.length, description == null ? "" : description, now);
             return new GeneratedArtifact(id, userId, kind, normalizeMime(mimeType), safeName,
                     content.length, description == null ? "" : description,
-                    "/api/artifacts/" + id, Instant.ofEpochMilli(now), null);
+                    "/api/artifacts/" + id, Instant.ofEpochMilli(now));
         } catch (IOException e) {
             throw new IllegalStateException("保存生成产物失败", e);
         }
@@ -94,7 +94,7 @@ public class ArtifactService {
                     ArtifactKind.valueOf(rs.getString("kind")), rs.getString("mime_type"),
                     rs.getString("file_name"), rs.getLong("size"), rs.getString("description"),
                     "/api/artifacts/" + rs.getString("id"),
-                    Instant.ofEpochMilli(rs.getLong("created_at")), null), path);
+                    Instant.ofEpochMilli(rs.getLong("created_at"))), path);
         }, id, userId);
         return rows.stream().filter(row -> row.path().startsWith(root) && Files.isRegularFile(row.path())).findFirst();
     }
@@ -108,7 +108,7 @@ public class ArtifactService {
                 rs.getString("id"), rs.getString("user_id"), ArtifactKind.valueOf(rs.getString("kind")),
                 rs.getString("mime_type"), rs.getString("file_name"), rs.getLong("size"),
                 rs.getString("description"), "/api/artifacts/" + rs.getString("id"),
-                Instant.ofEpochMilli(rs.getLong("created_at")), null), userId, safeLimit);
+                Instant.ofEpochMilli(rs.getLong("created_at"))), userId, safeLimit);
     }
 
     private static String sanitizeFileName(String value, ArtifactKind kind) {
@@ -116,7 +116,6 @@ public class ArtifactService {
             case IMAGE -> "image.png";
             case AUDIO -> "audio.mp3";
             case FILE -> "download.bin";
-            case BOARD -> "board.json";
         };
         if (value == null || value.isBlank()) return fallback;
         String name = Path.of(value).getFileName().toString().replaceAll("[\\r\\n\\t]", "_");

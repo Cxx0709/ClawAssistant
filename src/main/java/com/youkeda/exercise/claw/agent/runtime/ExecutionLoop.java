@@ -67,7 +67,7 @@ public class ExecutionLoop {
     private final PlanStore planStore;
     private final PlanValidator planValidator;
     private final ObjectMapper objectMapper;
-    /** 工具批次执行后的静默策略（业务方注入，如信息猎手后台受理） */
+    /** 工具批次执行后的静默策略（业务方注入） */
     private final List<LoopSuspensionPolicy> suspensionPolicies;
     /** Skill 文本回复结束条件校验注册表（业务方注入，如定时提醒防幻觉） */
     private final SkillReplyGuardRegistry replyGuardRegistry;
@@ -397,7 +397,7 @@ public class ExecutionLoop {
         TEXT_REPLY,
         /** LLM 返回 null，已降级重试仍失败 */
         LLM_FAILED,
-        /** 信息猎手后台任务已受理，需静默返回 */
+        /** 后台任务已受理，需静默返回 */
         SILENT,
         /** 达到循环上限，需要使用 synthesize 汇总 */
         MAX_ROUNDS

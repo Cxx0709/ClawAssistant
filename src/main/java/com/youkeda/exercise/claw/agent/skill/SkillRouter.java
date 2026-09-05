@@ -114,9 +114,7 @@ public class SkillRouter {
             // （置信度 >= NEW_TRIGGER_MIN_CONFIDENCE，与 Layer 3 同一门槛）且 pending 并非
             // 「正在收集必需输入」（pendingSlot 为空 = 纯确认状态，如行程估价待确认），
             // 则直接切到新 skill，避免 pending 把新意图锁死在 Layer 1。
-            // 例：行程估价待确认时「今天天气怎么样」应能切入 weather 技能；
-            //     而信息猎手等待补充主题（pendingSlot="query"）时不抢占——
-            //     用户回复「天气」应是待收集的主题，而非查天气的强意图。
+            // 例：行程估价待确认时「今天天气怎么样」应能切入 weather 技能。
             SkillRoutingResult preempted = tryPreemptPendingWithNewIntent(message, sessionOpt);
             if (preempted != null) {
                 log.debug("pending 被强新意图抢占 | from={} | to={} | message={}",
@@ -149,7 +147,7 @@ public class SkillRouter {
      * 复用 Layer 3 的触发词匹配（{@link #handleNewTrigger}），命中其他 skill 且置信度达标即返回该结果，
      * 由 {@link SkillSessionUpdater} 以 ACTIVATE 切换 skill（withActiveSkill 会清空旧 context，pending 随之清除）。
      *
-     * <p>pending 正在收集必需输入（pendingSlot 非空，如信息猎手等待补充主题）时返回 null 不抢占：
+     * <p>pending 正在收集必需输入（pendingSlot 非空）时返回 null 不抢占：
      * 此时用户回复很可能就是待收集的输入，触发词会误伤（回答主题「天气」不应路由到 weather 技能）。
      *
      * @return 可抢占的新意图路由结果；不抢占返回 null
@@ -197,7 +195,7 @@ public class SkillRouter {
 
             // 与 Layer 3 相同的「按 skill 取词」：默认关键词策略直接匹配本 skill 的关键词，
             // 避免共享 KeywordTriggerPolicy 把别家 skill 的关键词记到当前遍历的 skill 头上
-            // （否则 travel 会抢走 transport 的「怎么去」）。自定义策略（transport/scout）走各自 policy。
+            // （否则 travel 会抢走 transport 的「怎么去」）。自定义策略（如 transport）走各自 policy。
             boolean isDefaultKeywordPolicy = skill.triggerPolicyName() == null
                     || "keywordTriggerPolicy".equals(skill.triggerPolicyName());
 
@@ -252,7 +250,7 @@ public class SkillRouter {
                     matches.add(new SkillMatchResult(skill.name(), 0.65, skill.priority()));
                 }
             } else {
-                // Custom trigger policy (ScoutTriggerPolicy, TransportTriggerPolicy, etc.)
+                // Custom trigger policy (e.g. TransportTriggerPolicy)
                 SkillTriggerPolicy policy = triggerPolicyFactory.getPolicy(skill.triggerPolicyName());
                 SkillTriggerMatch match = policy.match(message, sessionOpt);
                 if (match.matched()) {

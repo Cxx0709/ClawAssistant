@@ -24,6 +24,7 @@ export interface ToolItem {
 
 export interface ChatMsg {
   id: string;
+  createdAt?: number;
   role: 'user' | 'assistant';
   /** 用户文本或助手文本 */
   content: string;
@@ -75,28 +76,12 @@ export interface MessagePage { items: HistoryMessage[]; nextCursor?: string | nu
 
 export interface Artifact {
   id: string;
-  kind: 'BOARD' | 'IMAGE' | 'AUDIO' | 'FILE';
+  kind: 'IMAGE' | 'AUDIO' | 'FILE';
   mimeType: string;
   fileName: string;
   size: number;
   description?: string;
   url: string;
-  /** BOARD 类型的结构化数据 */
-  boardData?: BoardView;
-}
-
-export interface BoardView {
-  title: string;            // 「杭州两日行程」
-  stats: string;            // 「步行 12.4 km · 用餐 3 顿 · 预算约 ¥860」
-  days: {
-    label: string;
-    items: {
-      title: string;
-      time: string;
-      status: 'done' | 'adjusted' | 'added';
-      note?: string;
-    }[];
-  }[];
 }
 
 // ===== 右侧信息栏数据（/api/webchat/*） =====

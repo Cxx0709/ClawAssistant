@@ -169,57 +169,6 @@ skill.knowledge.management.max-source-chars=512
 skill.knowledge.management.max-version-chars=64
 
 # ============================================
-# Information Scout Agent（信息猎手）
-# ============================================
-# 总开关
-scout.enabled=true
-# 语义匹配最低分数（0.0-1.0）
-scout.min-match-score=0.45
-# 严格阈值无结果时，候选仍需达到该分数
-scout.fallback-match-score=0.30
-# 兜底候选最多保留几条
-scout.fallback-candidate-count=3
-# 只推荐最近多少天内发布的信息
-scout.freshness-days=14
-# 每次最大候选信息数
-scout.max-candidates=20
-# 每次最大推荐数
-scout.max-recommendations=10
-# 不强制补足推荐，允许本轮没有值得推送的结果
-scout.min-recommendations=0
-# 信息保留天数
-scout.ttl-days=7
-# 搜索任务数
-scout.search-task-count=5
-# 每个搜索任务最大结果数
-scout.max-results-per-task=10
-# 定时任务 cron 表达式（每天早8点）
-scout.cron=0 0 8 * * *
-
-# Qdrant 信息库（独立于记忆库）
-scout.qdrant.collection=scout_information
-scout.qdrant.vector-dimension=1024
-
-# RSS 订阅源（Phase 2）
-scout.rss.enabled=true
-scout.rss.freshness-days=7
-# 国内科技与商业资讯
-scout.rss.feeds[0]=https://www.ithome.com/rss/
-scout.rss.feeds[1]=https://36kr.com/feed
-scout.rss.feeds[2]=https://www.oschina.net/news/rss
-scout.rss.feeds[3]=https://sspai.com/feed
-# 国内编程与工程实践资讯
-scout.rss.feeds[4]=https://tech.meituan.com/feed/
-scout.rss.feeds[5]=https://www.ruanyifeng.com/blog/atom.xml
-scout.rss.feeds[6]=https://hellogithub.com/rss
-scout.rss.feeds[7]=https://www.solidot.org/index.rss
-# 海外科技资讯
-scout.rss.feeds[8]=https://openai.com/news/rss.xml
-scout.rss.feeds[9]=https://spring.io/blog.atom
-scout.rss.feeds[10]=https://github.blog/feed/
-scout.rss.feeds[11]=https://hnrss.org/frontpage
-
-# ============================================
 # Anime Notification（动漫通知）
 # ============================================
 anime.enabled=true

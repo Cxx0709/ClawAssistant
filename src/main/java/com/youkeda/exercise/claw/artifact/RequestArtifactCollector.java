@@ -1,7 +1,5 @@
 package com.youkeda.exercise.claw.artifact;
 
-import com.fasterxml.jackson.databind.JsonNode;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -21,14 +19,6 @@ public final class RequestArtifactCollector implements ArtifactCollector {
                                                String fileName, String description) {
         GeneratedArtifact artifact = artifactService.store(
                 userId, kind, content, mimeType, fileName, description);
-        artifacts.add(artifact);
-        return artifact;
-    }
-
-    @Override
-    public synchronized GeneratedArtifact emitBoard(String fileName, String description, JsonNode boardData) {
-        GeneratedArtifact artifact = GeneratedArtifact.board(
-                java.util.UUID.randomUUID().toString(), userId, fileName, description, boardData);
         artifacts.add(artifact);
         return artifact;
     }

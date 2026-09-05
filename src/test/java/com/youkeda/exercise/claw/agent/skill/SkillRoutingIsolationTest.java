@@ -41,7 +41,7 @@ class SkillRoutingIsolationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"campus", "transport", "travel", "weather", "anime", "image", "growth-goal", "information-scout"})
+    @ValueSource(strings = {"campus", "transport", "travel", "weather", "anime", "image", "growth-goal", "research"})
     void unrelatedTurnUsesCommonWhileTaskRemainsResumable(String name) {
         SkillDefinition skill = mock(SkillDefinition.class);
         when(skill.name()).thenReturn(name);

@@ -39,22 +39,22 @@ class SkillRegistryTest {
         SkillsProperties properties = new SkillsProperties();
         SkillDefinition configuredSkill = new SkillDefinition(
                 null,
-                "信息猎手",
+                "信息研究",
                 3,
                 Set.of("信息", "搜索"),
                 Set.of(),
                 Set.of(),
-                "prompts/skills/information-scout.txt",
-                "scoutTriggerPolicy",
+                "prompts/skills/research.txt",
+                "researchTriggerPolicy",
                 null,
                 null,
                 true
         );
-        properties.setSkills(new LinkedHashMap<>(Map.of("information-scout", configuredSkill)));
+        properties.setSkills(new LinkedHashMap<>(Map.of("research", configuredSkill)));
 
         SkillRegistry registry = new SkillRegistry(properties, new ToolRegistry());
         registry.init();
 
-        assertEquals("information-scout", registry.find("information-scout").orElseThrow().name());
+        assertEquals("research", registry.find("research").orElseThrow().name());
     }
 }

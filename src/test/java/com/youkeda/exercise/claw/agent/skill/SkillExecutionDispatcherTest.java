@@ -25,16 +25,16 @@ class SkillExecutionDispatcherTest {
         SkillExecutor executor = mock(SkillExecutor.class);
         when(executor.getName()).thenReturn("testExecutor");
         SkillSession session = SkillSession.create("owner")
-                .withActiveSkill("information-scout");
+                .withActiveSkill("research");
         SkillExecutionResult expected = SkillExecutionResult.handledSilent(session);
         when(executor.execute(org.mockito.ArgumentMatchers.any())).thenReturn(expected);
         SkillsProperties properties = new SkillsProperties();
-        properties.setSkillWorkflowBindings(Map.of("information-scout", "scoutWorkflow"));
+        properties.setSkillWorkflowBindings(Map.of("research", "researchWorkflow"));
         SkillExecutionDispatcher dispatcher = new SkillExecutionDispatcher(
                 List.of(executor), properties);
         SkillDefinition skill = new SkillDefinition(
-                "information-scout", "test", 3, Set.of(), Set.of(), Set.of(),
-                "prompt.txt", "scoutTriggerPolicy", null,
+                "research", "test", 3, Set.of(), Set.of(), Set.of(),
+                "prompt.txt", "researchTriggerPolicy", null,
                 new SkillExecutionConfig(
                         SkillExecutionMode.BACKGROUND_WORKFLOW, "testExecutor"),
                 true);
@@ -44,7 +44,7 @@ class SkillExecutionDispatcherTest {
 
         assertEquals(SkillExecutionResult.Status.HANDLED_SILENT, result.status());
         verify(executor).execute(argThat(request ->
-                "scoutWorkflow".equals(request.workflowName())
+                "researchWorkflow".equals(request.workflowName())
                         && request.skill() == skill));
     }
 }

@@ -29,12 +29,12 @@ class SkillRouterSessionReleaseTest {
         return transport;
     }
 
-    private SkillDefinition scoutSkill() {
-        SkillDefinition scout = mock(SkillDefinition.class);
-        when(scout.name()).thenReturn("information-scout");
-        when(scout.triggerPolicyName()).thenReturn("scoutTriggerPolicy");
-        when(scout.priority()).thenReturn(3);
-        return scout;
+    private SkillDefinition researchSkill() {
+        SkillDefinition research = mock(SkillDefinition.class);
+        when(research.name()).thenReturn("research");
+        when(research.triggerPolicyName()).thenReturn("researchTriggerPolicy");
+        when(research.priority()).thenReturn(3);
+        return research;
     }
 
     /** transport 触发策略：对任何消息都不匹配（模拟「与当前消息无关」） */
@@ -44,13 +44,13 @@ class SkillRouterSessionReleaseTest {
         return policy;
     }
 
-    /** information-scout 触发策略：仅当消息含「搜集/收集/搜索」等发现词时命中 */
-    private SkillTriggerPolicy scoutPolicy() {
+    /** research 触发策略：仅当消息含「搜集/收集/搜索」等发现词时命中 */
+    private SkillTriggerPolicy researchPolicy() {
         SkillTriggerPolicy policy = mock(SkillTriggerPolicy.class);
         when(policy.match(any(), any())).thenAnswer(inv -> {
             String msg = inv.getArgument(0);
             return msg != null && msg.contains("搜集")
-                    ? new SkillTriggerMatch(true, 0.9, "scout explicit request", false)
+                    ? new SkillTriggerMatch(true, 0.9, "research explicit request", false)
                     : SkillTriggerMatch.noMatch();
         });
         return policy;
@@ -123,13 +123,13 @@ class SkillRouterSessionReleaseTest {
     }
 
     @Test
-    void scoutRequestWinsOverStuckTransportContinuation() {
+    void researchRequestWinsOverStuckTransportContinuation() {
         SkillRegistry registry = mock(SkillRegistry.class);
         SkillDefinition transport = transportSkill();
-        SkillDefinition scout = scoutSkill();
-        when(registry.getAll()).thenReturn(List.of(transport, scout));
+        SkillDefinition research = researchSkill();
+        when(registry.getAll()).thenReturn(List.of(transport, research));
         when(registry.find("transport")).thenReturn(Optional.of(transport));
-        when(registry.find("information-scout")).thenReturn(Optional.of(scout));
+        when(registry.find("research")).thenReturn(Optional.of(research));
 
         SkillSessionStore store = mock(SkillSessionStore.class);
         SkillSession session = SkillSession.create("owner").withActiveSkill("transport");
@@ -137,20 +137,20 @@ class SkillRouterSessionReleaseTest {
 
         TriggerPolicyFactory policyFactory = mock(TriggerPolicyFactory.class);
         SkillTriggerPolicy transportPolicy = alwaysNoMatchPolicy();
-        SkillTriggerPolicy scoutTrigger = scoutPolicy();
+        SkillTriggerPolicy researchTrigger = researchPolicy();
         when(policyFactory.getPolicy("transportTriggerPolicy")).thenReturn(transportPolicy);
-        when(policyFactory.getPolicy("scoutTriggerPolicy")).thenReturn(scoutTrigger);
+        when(policyFactory.getPolicy("researchTriggerPolicy")).thenReturn(researchTrigger);
 
         SkillRouter router = routerWith(registry, store, policyFactory);
         SkillRoutingResult result = router.route("帮我搜集一些关于AI的新闻", "owner");
 
-        // 新触发词在 Layer 3 命中信息猎手（先于延续检查），transport 被切换释放
-        assertEquals("information-scout", result.primarySkill(),
-                "明确的搜索意图应路由到信息猎手，而非卡在 transport");
+        // 新触发词在 Layer 3 命中信息研究（先于延续检查），transport 被切换释放
+        assertEquals("research", result.primarySkill(),
+                "明确的搜索意图应路由到信息研究，而非卡在 transport");
         assertEquals(SkillRoutingResult.SkillRoutingAction.ACTIVATE, result.action());
 
         // 切换后上下文应被清理（SkillSession.withActiveSkill 在技能切换时清空 context）
-        SkillSession switched = session.withActiveSkill("information-scout");
+        SkillSession switched = session.withActiveSkill("research");
         assertEquals(Map.of(), switched.context(), "技能切换后应清理旧技能上下文");
     }
 

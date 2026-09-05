@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import BrandMark from '../components/BrandMark';
 import Markdown from '../components/Markdown';
 import RightRail from '../components/RightRail';
 import ToolTrace from '../components/ToolTrace';
+import AgentRadarPage from './AgentRadarPage';
+import { executionLabel, executionState } from '../lib/execution';
 import ConversationSidebar from '../components/ConversationSidebar';
 import Composer from '../components/Composer';
 import MemoryNotice from '../components/MemoryNotice';
@@ -10,7 +12,6 @@ import ArtifactCard from '../components/ArtifactCard';
 import WorkspaceCanvas from '../components/WorkspaceCanvas';
 import { getMemories } from '../lib/memories';
 import { useAttachments } from '../lib/useAttachments';
-import { toolActionLabel } from '../lib/format';
 import {
   createConversation,
   deleteConversation,
@@ -42,10 +43,15 @@ export default function ChatPage({ onHome, user, onLogout }: {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [radarOpen, setRadarOpen] = useState(() => new URLSearchParams(window.location.search).has('radar'));
+  const [historyRefresh, setHistoryRefresh] = useState(0);
+  const chatRootRef = useRef<HTMLDivElement>(null);
+  const radarHistoryRef = useRef(false);
+  const radarScrollRef = useRef<number | null>(null);
+  const historyConversationRef = useRef<string | null>(null);
   const [railOpen, setRailOpen] = useState(false);
   const [railToken, setRailToken] = useState(0);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
-  const [highlightArtifactId, setHighlightArtifactId] = useState<string | null>(null);
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [archivedConversations, setArchivedConversations] = useState<Conversation[]>([]);
@@ -69,6 +75,55 @@ export default function ChatPage({ onHome, user, onLogout }: {
   const scrollFrameRef = useRef<number | null>(null);
   const textBufferRef = useRef('');
   const textFlushTimerRef = useRef<number | null>(null);
+
+  const openRadar = useCallback(() => {
+    radarScrollRef.current = scrollRef.current?.scrollTop ?? null;
+    const url = new URL(window.location.href);
+    url.searchParams.set('radar', '');
+    window.history.pushState(null, '', url);
+    radarHistoryRef.current = true;
+    setRadarOpen(true);
+  }, []);
+
+  const closeRadar = useCallback(() => {
+    chatRootRef.current?.removeAttribute('inert');
+    setRadarOpen(false);
+    if (radarHistoryRef.current) {
+      radarHistoryRef.current = false;
+      window.history.back();
+    } else {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('radar');
+      window.history.replaceState(null, '', url);
+    }
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      radarHistoryRef.current = false;
+      const open = new URLSearchParams(window.location.search).has('radar');
+      const requested = new URLSearchParams(window.location.search).get('conversation');
+      if (requested) setConversationId(requested);
+      if (open) radarScrollRef.current = scrollRef.current?.scrollTop ?? null;
+      setRadarOpen(open);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!radarOpen && radarScrollRef.current != null && scrollRef.current) {
+      scrollRef.current.scrollTop = radarScrollRef.current;
+      radarScrollRef.current = null;
+    }
+  }, [radarOpen]);
+
+  useEffect(() => {
+    const root = chatRootRef.current;
+    if (radarOpen) root?.setAttribute('inert', '');
+    else root?.removeAttribute('inert');
+    return () => root?.removeAttribute('inert');
+  }, [radarOpen]);
 
   useEffect(() => {
     const memoryId = new URLSearchParams(window.location.search).get('memory');
@@ -144,7 +199,15 @@ export default function ChatPage({ onHome, user, onLogout }: {
     let alive = true;
     setHistoryLoading(true);
     setHistoryError('');
-    window.history.replaceState(null, '', `?conversation=${encodeURIComponent(conversationId)}`);
+    const changedConversation = historyConversationRef.current !== conversationId;
+    historyConversationRef.current = conversationId;
+    if (changedConversation) {
+      setMessages([]);
+      setHistoryCursor(null);
+    }
+    const params = new URLSearchParams(window.location.search);
+    params.set('conversation', conversationId);
+    window.history.replaceState(null, '', `?${params}`);
     fetchConversationMessages(conversationId)
       .then((page) => {
         if (!alive) return;
@@ -152,6 +215,7 @@ export default function ChatPage({ onHome, user, onLogout }: {
         seqRef.current = history.length;
         setMessages(history.map((message, index) => ({
           id: message.id || `h${index}`,
+          createdAt: message.createdAt,
           role: message.role,
           content: message.content,
           tools: message.tools,
@@ -164,20 +228,25 @@ export default function ChatPage({ onHome, user, onLogout }: {
           artifacts: message.role === 'user' ? message.attachments : message.artifacts,
         })));
         setHistoryCursor(page.nextCursor ?? null);
-        stickRef.current = true;
-        window.setTimeout(() => scrollToBottom(), 0);
+        if (changedConversation) {
+          stickRef.current = true;
+          window.setTimeout(() => scrollToBottom(), 0);
+        }
       })
       .catch((reason) => alive && setHistoryError((reason as Error)?.message || '对话加载失败'))
       .finally(() => alive && setHistoryLoading(false));
     return () => { alive = false; };
-  }, [conversationId, scrollToBottom]);
+  }, [conversationId, scrollToBottom, historyRefresh]);
 
   useEffect(() => {
+    if (busy) return; // SSE owns the active response; polling only resumes detached runs.
     const pending = messages.filter((message) => message.streaming && message.runId);
     if (pending.length === 0) return;
+    let alive = true;
     const timer = window.setInterval(() => {
       pending.forEach((message) => {
         void fetchRun(message.runId!).then((fresh) => {
+          if (!alive) return;
           setMessages((items) => items.map((item) => item.id === message.id ? {
             ...item,
             content: fresh.content,
@@ -192,8 +261,8 @@ export default function ChatPage({ onHome, user, onLogout }: {
         }).catch(() => undefined);
       });
     }, 1200);
-    return () => window.clearInterval(timer);
-  }, [messages]);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [messages, busy]);
 
   const loadOlderMessages = useCallback(async () => {
     if (!conversationId || !historyCursor || olderLoading) return;
@@ -203,6 +272,7 @@ export default function ChatPage({ onHome, user, onLogout }: {
       setMessages((current) => [
         ...page.items.map((message) => ({
           id: message.id,
+          createdAt: message.createdAt,
           role: message.role,
           content: message.content,
           tools: message.tools,
@@ -513,8 +583,8 @@ export default function ChatPage({ onHome, user, onLogout }: {
 
       setMessages((prev) => [
         ...prev,
-        { id: uid, role: 'user', content: content || '请处理这些附件', artifacts: selectedAttachments },
-        { id: aid, role: 'assistant', content: '', tools: [], skills: [], streaming: true },
+        { id: uid, createdAt: startedAt, role: 'user', content: content || '请处理这些附件', artifacts: selectedAttachments },
+        { id: aid, createdAt: startedAt, role: 'assistant', content: '', tools: [], skills: [], streaming: true },
       ]);
       streamIdRef.current = aid;
       setBusy(true);
@@ -561,7 +631,8 @@ export default function ChatPage({ onHome, user, onLogout }: {
   const connected = status?.appReady;
 
   return (
-    <div className="flex h-dvh flex-col bg-canvas text-ink">
+    <>
+    <div ref={chatRootRef} aria-hidden={radarOpen || undefined} className="flex h-dvh flex-col bg-canvas text-ink">
       {/* ===== 顶栏 ===== */}
       <header className="flex h-[58px] shrink-0 items-center gap-1 border-b border-line px-3 sm:gap-3 sm:px-4">
         <button
@@ -617,7 +688,8 @@ export default function ChatPage({ onHome, user, onLogout }: {
           </a>
           <button
             type="button"
-            onClick={() => setRailOpen((v) => !v)}
+            onClick={() => { setWorkspaceOpen(false); setRailOpen((v) => !v); }}
+            aria-label="会话信息"
             aria-pressed={railOpen}
             className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[12.5px] font-medium transition-colors ${
               railOpen
@@ -629,11 +701,12 @@ export default function ChatPage({ onHome, user, onLogout }: {
               <rect x="3" y="4" width="18" height="16" rx="2.5" />
               <path d="M9 4v16M3 9h6M3 14h6" />
             </svg>
-            信息
+            <span className="hidden sm:inline">信息</span>
           </button>
           <button
             type="button"
-            onClick={() => setWorkspaceOpen((v) => !v)}
+            onClick={() => { setRailOpen(false); setWorkspaceOpen((v) => !v); }}
+            aria-label="工作台"
             aria-pressed={workspaceOpen}
             className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[12.5px] font-medium transition-colors ${
               workspaceOpen
@@ -642,15 +715,17 @@ export default function ChatPage({ onHome, user, onLogout }: {
             }`}
           >
             <span>🎨</span>
-            工作台
+            <span className="hidden sm:inline">工作台</span>
           </button>
-          <a
-            href="?radar"
+          <button
+            type="button"
+            onClick={openRadar}
+            aria-label="查看当前会话执行记录"
             className="flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-[12.5px] font-medium text-ink-soft transition-colors hover:bg-canvas-sub hover:text-ink"
           >
             <span>📡</span>
-            雷达
-          </a>
+            <span className="hidden sm:inline">雷达</span>
+          </button>
           <button type="button" onClick={onLogout} className="h-9 px-2 text-xs text-ink-faint hover:text-ink">退出</button>
         </div>
       </header>
@@ -723,10 +798,6 @@ export default function ChatPage({ onHome, user, onLogout }: {
               <MessageList
                 messages={messages}
                 onToggleTrace={toggleTrace}
-                onOpenWorkspace={(artifactId) => {
-                  setWorkspaceOpen(true);
-                  setHighlightArtifactId(artifactId);
-                }}
               />
             </div>
           </div>
@@ -779,11 +850,7 @@ export default function ChatPage({ onHome, user, onLogout }: {
               onClick={() => setWorkspaceOpen(false)}
             />
             <div className="fixed inset-y-0 right-0 z-40 w-[85vw] max-w-[400px] shadow-[-8px_0_30px_-18px_rgba(20,21,23,.25)] lg:static lg:z-auto lg:w-[400px] lg:max-w-none lg:shrink-0 lg:shadow-none">
-              <WorkspaceCanvas
-                conversationId={conversationId}
-                refreshToken={railToken}
-                highlightArtifactId={highlightArtifactId}
-              />
+              <WorkspaceCanvas />
             </div>
           </>
         )}
@@ -796,6 +863,20 @@ export default function ChatPage({ onHome, user, onLogout }: {
         </div>
       )}
     </div>
+    {radarOpen && <AgentRadarPage
+      key={conversationId}
+      messages={historyLoading ? [] : messages}
+      conversationTitle={[...conversations, ...archivedConversations].find(item => item.id === conversationId)?.title || '当前会话'}
+      loading={historyLoading || conversationsLoading}
+      error={historyError}
+      canRefresh={!!conversationId && !busy && !messages.some(message => message.streaming)}
+      hasOlder={!!historyCursor}
+      loadingOlder={olderLoading}
+      onRefresh={() => setHistoryRefresh(value => value + 1)}
+      onLoadOlder={() => void loadOlderMessages()}
+      onBack={closeRadar}
+    />}
+    </>
   );
 }
 
@@ -840,11 +921,9 @@ function EmptyState({ onPick }: { onPick: (s: string) => void }) {
 function MessageList({
   messages,
   onToggleTrace,
-  onOpenWorkspace,
 }: {
   messages: ChatMsg[];
   onToggleTrace: (id: string) => void;
-  onOpenWorkspace?: (artifactId: string) => void;
 }) {
   return (
     <div className="space-y-6">
@@ -869,22 +948,23 @@ function MessageList({
             <ToolTrace
               tools={m.tools ?? []}
               skills={m.skills}
-              running={!!m.streaming}
+              running={executionState(m) === 'running'}
               open={!!m.traceOpen}
               totalMs={m.totalMs}
               onToggle={() => onToggleTrace(m.id)}
             />
 
             {m.streaming && !m.content && !m.errorText ? (
-              <TypingDots
-                action={m.tools?.find(t => t.state === 'running')?.name
-                  ? `正在${toolActionLabel(m.tools.find(t => t.state === 'running')?.name)}…`
-                  : undefined}
-              />
+              <TypingDots action={executionLabel(m)} />
             ) : (
               m.content && <Markdown content={m.content} />
             )}
-            <ArtifactList artifacts={m.artifacts ?? []} onOpenWorkspace={onOpenWorkspace} />
+            {!!(m.content || !m.streaming) && !!(m.runId || m.tools?.length || m.errorText) && (
+              <p role="status" className={`mt-2 text-xs ${executionState(m) === 'failed' ? 'text-red-700' : 'text-ink-soft'}`}>
+                {executionLabel(m)}
+              </p>
+            )}
+            <ArtifactList artifacts={m.artifacts ?? []} />
           </div>
         ),
       )}
@@ -892,7 +972,7 @@ function MessageList({
   );
 }
 
-function ArtifactList({ artifacts, compact = false, onOpenWorkspace }: { artifacts: Artifact[]; compact?: boolean; onOpenWorkspace?: (artifactId: string) => void }) {
+function ArtifactList({ artifacts, compact = false }: { artifacts: Artifact[]; compact?: boolean }) {
   if (artifacts.length === 0) return null;
   return (
     <div className={`mt-3 grid gap-2 ${compact ? 'max-w-[82%]' : 'sm:grid-cols-2'}`}>
@@ -901,16 +981,7 @@ function ArtifactList({ artifacts, compact = false, onOpenWorkspace }: { artifac
           <ArtifactCard
             artifact={artifact}
             compact={compact}
-            onBoardClick={() => onOpenWorkspace?.(artifact.id)}
           />
-          {artifact.kind === 'BOARD' && !compact && (
-            <button
-              onClick={() => onOpenWorkspace?.(artifact.id)}
-              className="flex items-center gap-1 self-start rounded-md px-2 py-1 text-xs text-brand hover:bg-brand-dim transition-colors"
-            >
-              <span>→</span> 工作台
-            </button>
-          )}
         </div>
       ))}
     </div>

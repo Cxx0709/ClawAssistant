@@ -1,4 +1,5 @@
-import { fmtDuration } from '../lib/format';
+import { fmtDuration, toolActionLabel } from '../lib/format';
+import { toolStateLabel } from '../lib/execution';
 import type { ToolItem } from '../lib/types';
 
 interface ToolTraceProps {
@@ -15,15 +16,15 @@ interface ToolTraceProps {
 function SpinnerIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 animate-spin" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" fill="none" stroke="#10a37f" strokeOpacity="0.25" strokeWidth="3" />
-      <path d="M21 12a9 9 0 0 0-9-9" fill="none" stroke="#10a37f" strokeWidth="3" strokeLinecap="round" />
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+      <path d="M21 12a9 9 0 0 0-9-9" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
     </svg>
   );
 }
 
 function CheckIcon() {
   return (
-    <span className="trace-icon bg-brand-dim text-brand-deep">
+    <span className="trace-icon bg-ok-dim text-ok">
       <svg viewBox="0 0 24 24" className="h-[10px] w-[10px]" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M4.5 12.5l5 5 10-11" />
       </svg>
@@ -63,28 +64,31 @@ function ChevronIcon({ open }: { open: boolean }) {
 }
 
 /** 单行工具条目：出现 → 运行中 → ✓/✗ + 耗时。 */
-function ToolRow({ tool }: { tool: ToolItem }) {
-  const name = tool.name === 'image_recognition' ? '图片识别' : tool.name.replace(/_/g, ' ');
+function ToolRow({ tool, running }: { tool: ToolItem; running: boolean }) {
+  const name = tool.name === 'image_recognition' ? '图片识别' : toolActionLabel(tool.name);
   return (
     <div className="trace-row trace-row-enter">
-      {tool.state === 'running' ? (
-        <span className="trace-icon"><SpinnerIcon /></span>
+      {tool.state === 'running' && running ? (
+        <span className="trace-icon text-brand"><SpinnerIcon /></span>
       ) : tool.state === 'ok' ? (
         <CheckIcon />
-      ) : (
+      ) : tool.state === 'err' ? (
         <CrossIcon />
+      ) : (
+        <span aria-hidden="true" className="trace-icon text-ink-faint">−</span>
       )}
       <span className="min-w-0 flex-1">
-        <span className="flex items-baseline gap-2">
-          <span className="font-mono text-[12.5px] font-medium text-ink">{name}</span>
+        <span className="flex flex-wrap items-baseline gap-x-2">
+          <span className="break-words text-[12.5px] font-medium text-ink">{name}</span>
           <span className="truncate font-mono text-[11px] text-ink-faint">{tool.skill}</span>
         </span>
-        {tool.detail && tool.state === 'err' && (
-          <span className="mt-0.5 line-clamp-2 block text-xs leading-snug text-ink-soft">{tool.detail}</span>
+        {tool.state === 'err' && (
+          <span className="mt-0.5 block break-words text-xs leading-snug text-red-700">{tool.detail || '工具未返回具体原因，请稍后重试。'}</span>
         )}
       </span>
       <span className="ml-auto pl-3 font-mono text-[11px] tabular-nums text-ink-faint">
-        {tool.state === 'running' ? '运行中…' : fmtDuration(tool.durationMs)}
+        {toolStateLabel(tool, running)}
+        {tool.durationMs != null && <span className="mt-1 block">{fmtDuration(tool.durationMs)}</span>}
       </span>
     </div>
   );
@@ -145,7 +149,7 @@ export default function ToolTrace({ tools, running, open, totalMs, onToggle }: T
       )}
       <div className="px-1 py-1">
         {tools.map((t) => (
-          <ToolRow key={t.id} tool={t} />
+          <ToolRow key={t.id} tool={t} running={running} />
         ))}
       </div>
     </div>

@@ -231,11 +231,11 @@ class ToolAssemblyCrossSkillTest {
         skills.put("image", new SkillDefinition("image", null, 5, Set.of("图片"),
                 Set.of("image_generate"), Set.of(),
                 "prompts/skills/image.txt", null, null, null, true));
-        skills.put("information-scout", new SkillDefinition("information-scout", null, 3,
+        skills.put("research", new SkillDefinition("research", null, 3,
                 Set.of("信息", "搜索"), Set.of(), Set.of(),
-                "prompts/skills/information-scout.txt", "scoutTriggerPolicy",
+                "prompts/skills/research.txt", "researchTriggerPolicy",
                 null, new SkillExecutionConfig(SkillExecutionMode.BACKGROUND_WORKFLOW,
-                        "informationScoutSkillExecutor"), true));
+                        "researchSkillExecutor"), true));
 
         props.setSkills(skills);
         return props;

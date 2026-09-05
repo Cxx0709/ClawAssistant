@@ -85,7 +85,7 @@ public class GrowthGoalRepository {
                 """, this::mapRow, userId, status.name());
     }
 
-    /** 查找所有 ACTIVE 目标（单用户 Scout 画像场景，无需指定 userId）。 */
+    /** 查找所有 ACTIVE 目标（无需指定 userId）。 */
     public List<GrowthGoal> findAllActive() {
         return jdbc.query("""
                 SELECT id, user_id, title, success_criteria, deadline, status,

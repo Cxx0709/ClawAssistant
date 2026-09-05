@@ -101,65 +101,6 @@ public class SearchService {
     }
 
     /**
-     * 按时间排序搜索（信息猎手专用）
-     *
-     * @param query      搜索关键词
-     * @param maxResults 返回结果条数
-     * @return 搜索结果 JSON，按发布时间排序
-     */
-    public String searchByDate(String query, int maxResults) {
-        return searchByDate(query, maxResults, 0);
-    }
-
-    /**
-     * 按时间搜索，并限定最近天数。
-     */
-    public String searchByDate(String query, int maxResults, int freshnessDays) {
-        try {
-            ObjectNode body = objectMapper.createObjectNode();
-            body.put("api_key", config.getKey());
-            body.put("query", query);
-            body.put("search_depth", config.getSearchDepth());
-            body.put("max_results", Math.min(maxResults, 20));
-            body.put("include_answer", config.getIncludeAnswer());
-            body.put("include_raw_content", false);
-            body.put("include_images", false);
-            body.put("sort_by", "date"); // 按时间排序
-            if (freshnessDays > 0) {
-                body.put("topic", "news");
-                body.put("days", freshnessDays);
-            }
-
-            String requestBody = objectMapper.writeValueAsString(body);
-            log.info("Tavily 搜索（按时间）| query={} | maxResults={}", query, maxResults);
-
-            HttpClient httpClient = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(config.getTimeout()))
-                    .build();
-
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(config.getUrl()))
-                    .timeout(Duration.ofSeconds(config.getTimeout()))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, BodyHandlers.ofString());
-
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                log.error("Tavily API 异常 | status={}", response.statusCode());
-                return "{\"error\": \"搜索服务返回 HTTP " + response.statusCode() + "\"}";
-            }
-
-            return formatResponse(response.body(), query);
-
-        } catch (Exception e) {
-            log.error("搜索失败（按时间）| query={} | error={}", query, e.getMessage());
-            return "{\"error\": \"搜索服务不可用: " + e.getMessage().replace("\"", "'") + "\"}";
-        }
-    }
-
-    /**
      * 从 Tavily 原始响应中提取关键字段，精简后返回给 LLM
      *
      * <p>Tavily 原始响应包含很多字段（images、response_time 等），LLM 不需要全部。

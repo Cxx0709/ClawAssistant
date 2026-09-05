@@ -90,7 +90,6 @@ public class ChatApplicationService {
                                 fileParseService.parse(bytes, stored.metadata().fileName());
                         yield parsed == null ? null : parsed.text();
                     }
-                    case BOARD -> null; // BOARD类型不作为附件处理
                 };
                 context.append("\n\n[附件：").append(stored.metadata().fileName()).append("]\n")
                         .append(extracted == null || extracted.isBlank() ? "无法解析附件内容" : extracted);

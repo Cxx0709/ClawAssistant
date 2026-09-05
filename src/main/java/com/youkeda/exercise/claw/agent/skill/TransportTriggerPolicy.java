@@ -25,7 +25,7 @@ public class TransportTriggerPolicy implements SkillTriggerPolicy {
                 || message.contains("广州") || message.contains("深圳")
                 || message.contains("地铁") || message.contains("公交");
 
-        // Has search verb -> lower confidence (might be scout)
+        // Has search verb -> lower confidence (general search intent, not transport-specific)
         boolean hasSearchVerb = SEARCH_VERBS.stream().anyMatch(message::contains);
 
         if (hasTransportVerb && hasPlace && !hasSearchVerb) {
