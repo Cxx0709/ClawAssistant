@@ -102,7 +102,7 @@ function ToolRow({ tool, running }: { tool: ToolItem; running: boolean }) {
         )}
       </span>
       <span className="ml-auto pl-3 font-mono text-[11px] tabular-nums text-ink-faint">
-        {tool.state === 'running' ? '运行中…' : tool.state === 'WAIT_CONFIRM' ? '待确认' : fmtDuration(tool.durationMs)}
+        {tool.state === 'running' ? (running ? '运行中…' : '未完成') : tool.state === 'WAIT_CONFIRM' ? '待确认' : fmtDuration(tool.durationMs)}
       </span>
     </div>
   );

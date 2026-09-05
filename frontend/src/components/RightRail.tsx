@@ -28,6 +28,12 @@ function Section({ title, children, empty }: { title: string; children?: React.R
   );
 }
 
+/** 后端时间戳单位不统一：Instant 序列化出来是 epoch 秒，部分字段是毫秒。统一转毫秒。 */
+function toMillis(v: number | string): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) && n < 1e12 ? n * 1000 : n;
+}
+
 export default function RightRail({ refreshToken }: RailProps) {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [goals, setGoals] = useState<GoalItem[] | null>(null);
@@ -101,7 +107,7 @@ export default function RightRail({ refreshToken }: RailProps) {
                 <span className="truncate">{item.title}</span>
               </p>
               <p className="mt-1 line-clamp-3 text-[11.5px] leading-relaxed text-ink-soft">{item.content}</p>
-              <p className="mt-1 font-mono text-[10px] text-ink-faint">{new Date(item.createdAt).toLocaleString()}</p>
+              <p className="mt-1 font-mono text-[10px] text-ink-faint">{new Date(toMillis(item.createdAt)).toLocaleString()}</p>
             </button>
           ))}
         </Section>

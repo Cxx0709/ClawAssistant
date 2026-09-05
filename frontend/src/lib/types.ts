@@ -157,5 +157,6 @@ export interface NotificationItem {
   priority: number;
   actionPayload?: string;
   status: 'UNREAD' | 'READ';
-  createdAt: string;
+  /** 后端把 Instant 序列化成 epoch 秒（如 1788531403.027），前端需按秒转毫秒 */
+  createdAt: number;
 }
