@@ -29,7 +29,7 @@ import {
   fetchPendingTool,
 } from '../lib/api';
 import { consumeStream } from '../lib/sse';
-import type { AppUser, Artifact, ChatMsg, Conversation, PendingToolInfo, StreamEvent, SystemStatus } from '../lib/types';
+import type { AppUser, Artifact, ChatMsg, Conversation, PendingToolInfo, StreamEvent, SystemStatus, ToolItem } from '../lib/types';
 
 const SUGGESTIONS = [
   '帮我规划一趟周末杭州两日游',
@@ -484,6 +484,29 @@ export default function ChatPage({ onHome, user, onLogout }: {
             return { ...m, tools: next };
           });
           break;
+        case 'tool_trace': {
+          const item = evt.item;
+          patchStream((m) => {
+            const tools = m.tools ?? [];
+            if (item.eventType === 'UPDATE') {
+              const idx = tools.findIndex((t) => t.traceId != null && t.traceId === item.traceId);
+              if (idx === -1) return m;
+              const next = tools.slice();
+              next[idx] = {
+                ...next[idx],
+                state: item.state as ToolItem['state'],
+                durationMs: item.durationMs,
+                detail: item.detail,
+              };
+              return { ...m, tools: next };
+            }
+            return {
+              ...m,
+              tools: [...tools, item],
+            };
+          });
+          break;
+        }
         case 'text':
           queueText(evt.content);
           break;
@@ -588,7 +611,29 @@ export default function ChatPage({ onHome, user, onLogout }: {
     try {
       const res = await confirmPendingTool();
       setPending(null);
-      setPendingNotice(res.reply || '操作已确认执行。');
+      const replyText = res.reply || '操作已确认执行。';
+      setPendingNotice(replyText);
+      // 确认结果作为新的助手消息写入聊天记录，避免只停留在"此操作需要确认"
+      if (res.reply) {
+        setMessages((prev) => [...prev, {
+          id: `confirm-${Date.now()}`,
+          role: 'assistant' as const,
+          content: res.reply,
+        }]);
+      }
+      // in-place trace update: WAIT_CONFIRM -> res.traceState
+      if (res.traceId) {
+        setMessages((prev) => prev.map((m) => {
+          const tools = m.tools;
+          if (!tools) return m;
+          const idx = tools.findIndex((t) => t.traceId != null && t.traceId === res.traceId);
+          if (idx === -1) return m;
+          const next = tools.slice();
+          const st = (res.traceState ?? 'ok') as ToolItem['state'];
+          next[idx] = { ...next[idx], state: st, durationMs: 0, detail: st === 'ok' ? 'confirmed' : 'cancelled' };
+          return { ...m, tools: next };
+        }));
+      }
     } catch (reason) {
       setPendingNotice((reason as Error)?.message || '确认失败，请稍后再试');
     } finally {
@@ -603,6 +648,19 @@ export default function ChatPage({ onHome, user, onLogout }: {
       const res = await cancelPendingTool();
       setPending(null);
       setPendingNotice(res.reply || '操作已取消。');
+      // in-place trace update: WAIT_CONFIRM -> res.traceState
+      if (res.traceId) {
+        setMessages((prev) => prev.map((m) => {
+          const tools = m.tools;
+          if (!tools) return m;
+          const idx = tools.findIndex((t) => t.traceId != null && t.traceId === res.traceId);
+          if (idx === -1) return m;
+          const next = tools.slice();
+          const st = (res.traceState ?? 'ok') as ToolItem['state'];
+          next[idx] = { ...next[idx], state: st, durationMs: 0, detail: st === 'ok' ? 'confirmed' : 'cancelled' };
+          return { ...m, tools: next };
+        }));
+      }
     } catch (reason) {
       setPendingNotice((reason as Error)?.message || '取消失败，请稍后再试');
     } finally {

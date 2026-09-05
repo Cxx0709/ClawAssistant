@@ -13,6 +13,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 长期记忆门面服务
@@ -211,6 +213,62 @@ public class LongTermMemoryService {
         try (var ignored = userContext.open(userId)) {
             return saveManual(category, content);
         }
+    }
+
+    // ==================== 邮箱检索（从记忆中提取） ====================
+
+    /** 匹配邮箱地址的正则 */
+    private static final Pattern EMAIL_PATTERN = Pattern.compile(
+            "[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}");
+
+    /**
+     * 从用户的长期记忆中检索邮箱地址。
+     *
+     * <p>遍历所有记忆（按更新时间降序），用正则匹配内容中的邮箱地址，
+     * 返回第一条匹配到的有效邮箱。未找到返回 null。
+     *
+     * <p>用户只需在"我的记忆"页面添加一条"个人信息"类别的记忆，
+     * 内容如"我的邮箱是：xxx@qq.com"，即可被自动识别用于邮件提醒。
+     *
+     * @return 邮箱地址，未找到返回 null
+     */
+    public String findEmailAddress() {
+        return findEmailAddress(userContext.currentUserIdOrNull());
+    }
+
+    /** 指定 userId 检索邮箱。userId 为 null 时返回 null。 */
+    public String findEmailAddress(String userId) {
+        if (userId == null || userId.isBlank()) return null;
+        if (!props.isEnabled()) return null;
+        try (var ignored = userContext.open(userId)) {
+            List<MemoryItem> all = memoryStore.getAll();
+            // 按更新时间降序，最新的记忆优先
+            List<MemoryItem> sorted = all.stream()
+                    .filter(item -> !item.disabled())
+                    .sorted(Comparator.comparing(MemoryItem::updatedAt).reversed())
+                    .toList();
+            for (MemoryItem item : sorted) {
+                String email = extractEmail(item.content());
+                if (email != null) {
+                    log.debug("从记忆中检索到邮箱 | memoryId={} | email={}", item.id(), email);
+                    return email;
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            log.warn("从记忆中检索邮箱失败 | error={}", e.getMessage());
+            return null;
+        }
+    }
+
+    /** 从文本中提取第一个邮箱地址，未找到返回 null。 */
+    private static String extractEmail(String text) {
+        if (text == null || text.isBlank()) return null;
+        Matcher matcher = EMAIL_PATTERN.matcher(text);
+        if (matcher.find()) {
+            return matcher.group();
+        }
+        return null;
     }
 
     // ==================== 查询与管理 ====================

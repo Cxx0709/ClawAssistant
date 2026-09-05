@@ -245,6 +245,10 @@ export interface PendingActResponse {
   status: string;
   reply: string;
   rawResult?: string;
+  /** trace id linking to the WAIT_CONFIRM tool trace, for in-place update */
+  traceId?: string;
+  /** target trace state after confirm/cancel: confirm -> ok, cancel -> err */
+  traceState?: 'ok' | 'err';
 }
 
 export async function fetchPendingTool(): Promise<PendingToolResponse> {
@@ -316,6 +320,41 @@ export async function updateBoardItem(
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ day, seq, ...updates }),
+  });
+  return await res.json();
+}
+
+// ============ 用户资料（邮箱提醒设置） ============
+
+export interface UserProfileResponse {
+  email: string;
+  emailNotificationsEnabled: boolean;
+  notificationsEnabled: boolean;
+}
+
+export async function fetchUserProfile(): Promise<UserProfileResponse> {
+  return getJson<UserProfileResponse>('/api/profile');
+}
+
+export async function setUserEmail(email: string): Promise<{ success: boolean; email?: string; error?: string }> {
+  const res = await apiFetch('/api/profile/email', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  return await res.json();
+}
+
+export async function clearUserEmail(): Promise<{ success: boolean }> {
+  const res = await apiFetch('/api/profile/email', { method: 'DELETE' });
+  return await res.json();
+}
+
+export async function setEmailNotificationsEnabled(enabled: boolean): Promise<{ success: boolean; emailNotificationsEnabled?: boolean }> {
+  const res = await apiFetch('/api/profile/email-notifications', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
   });
   return await res.json();
 }

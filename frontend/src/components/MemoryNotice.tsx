@@ -8,8 +8,9 @@ export default function MemoryNotice({ conversationId, refreshToken }: { convers
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [dismissed, setDismissed] = useState(false);
   useEffect(() => {
-    setChanges([]); setError('');
+    setChanges([]); setError(''); setDismissed(false);
   }, [conversationId]);
   useEffect(() => {
     if (!conversationId) return;
@@ -21,7 +22,17 @@ export default function MemoryNotice({ conversationId, refreshToken }: { convers
       loading = true;
       try {
         const items = await getMemoryChanges(conversationId, controller.signal);
-        if (alive) setChanges(items);
+        if (alive) {
+          setChanges(prev => {
+            // 有新的记忆变更时，重置 dismissed 状态，让提示重新显示
+            if (items.length > 0 && prev.length > 0 && items[0].id !== prev[0].id) {
+              setDismissed(false);
+            } else if (items.length > 0 && prev.length === 0) {
+              setDismissed(false);
+            }
+            return items;
+          });
+        }
       } catch { /* A receipt outage must not interrupt chat; management reports errors separately. */ }
       finally { loading = false; }
     };
@@ -31,7 +42,7 @@ export default function MemoryNotice({ conversationId, refreshToken }: { convers
   }, [conversationId, refreshToken, revision, busy]);
 
   const latest = changes[0];
-  if (!latest && !error) return null;
+  if (dismissed || (!latest && !error)) return null;
   return <div className="mb-3 border-l-2 border-brand/40 pl-3 text-xs leading-6 text-ink-soft" aria-live="polite">
     {latest && <div className="flex flex-wrap items-center gap-x-3">
       <span className="min-w-0 flex-1 break-words">{latest.action === 'ADDED' ? '已记住' : '已更新记忆'}：{latest.memory.content}</span>
@@ -45,6 +56,7 @@ export default function MemoryNotice({ conversationId, refreshToken }: { convers
         } catch (reason) { setError((reason as Error).message); }
         finally { setBusy(false); }
       }}>{busy ? '撤销中…' : '撤销'}</button>
+      <button className="text-ink-faint hover:text-ink" onClick={() => setDismissed(true)} aria-label="关闭提示">×</button>
     </div>}
     {changes.length > 1 && <details className="mt-1"><summary className="cursor-pointer text-ink-faint">本对话的其他 {changes.length - 1} 条近期记忆变更</summary>{changes.slice(1).map(change => <p key={change.id} className="mt-1"><a href={`?memories&memoryId=${encodeURIComponent(change.memory.id)}`} target="_blank" rel="noopener noreferrer" className="hover:underline">{change.memory.content} ↗</a></p>)}</details>}
     {error && <p role="alert" className="text-red-700">{error}</p>}

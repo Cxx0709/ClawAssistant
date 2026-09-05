@@ -1,9 +1,11 @@
 package com.youkeda.exercise.claw.web;
 
+import com.youkeda.exercise.claw.agent.activity.AgentActivityRecorder;
 import com.youkeda.exercise.claw.agent.skill.PendingToolAction;
 import com.youkeda.exercise.claw.agent.skill.PendingToolCoordinator;
 import com.youkeda.exercise.claw.identity.AuthenticatedUser;
 import com.youkeda.exercise.claw.identity.UserExecutionContext;
+import com.youkeda.exercise.claw.web.conversation.ToolTraceItem;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,13 +36,16 @@ public class PendingToolController {
     private final PendingToolCoordinator pending;
     private final AuthenticatedUser users;
     private final UserExecutionContext userContext;
+    private final AgentActivityRecorder activityRecorder;
 
     public PendingToolController(PendingToolCoordinator pending,
                                  AuthenticatedUser users,
-                                 UserExecutionContext userContext) {
+                                 UserExecutionContext userContext,
+                                 AgentActivityRecorder activityRecorder) {
         this.pending = pending;
         this.users = users;
         this.userContext = userContext;
+        this.activityRecorder = activityRecorder;
     }
 
     /** 查询当前用户的待确认操作。 */
@@ -48,16 +53,30 @@ public class PendingToolController {
     public Map<String, Object> get(Authentication authentication) {
         String userId = users.require(authentication).id();
         PendingToolAction action = pending.findPending(userId);
+        Map<String, Object> body = new LinkedHashMap<>();
         if (action == null || action.status() != PendingToolAction.Status.PENDING_CONFIRMATION) {
-            return Map.of("pending", null);
+            // no pending task: return hasPending=false, never pass null to Map.of
+            body.put("hasPending", false);
+            body.put("pending", null);
+            return body;
         }
+        // has pending task: build response safely, no null in Map.of
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("id", action.id());
         view.put("toolName", action.toolName());
         view.put("displayName", PendingToolCoordinator.displayName(action.toolName()));
         view.put("argsPreview", truncateArgs(action.toolArguments()));
-        view.put("expireAt", action.expireAt().toString());
-        return Map.of("pending", view);
+        view.put("expireAt", action.expireAt() == null ? null : action.expireAt().toString());
+        String traceId = action.traceId();
+        if (traceId != null && !traceId.isBlank()) {
+            view.put("traceId", traceId);
+        }
+        body.put("hasPending", true);
+        if (traceId != null && !traceId.isBlank()) {
+            body.put("traceId", traceId);
+        }
+        body.put("pending", view);
+        return body;
     }
 
     /** 确认并执行待确认操作。 */
@@ -76,6 +95,7 @@ public class PendingToolController {
         String userId = users.require(authentication).id();
         // 打开租户上下文，保证 tenant 隔离的服务（如 Qdrant 记忆）在工具执行时可用
         try (var ignored = userContext.open(userId)) {
+            PendingToolAction before = pending.findPending(userId);
             PendingToolCoordinator.Result result = isConfirm
                     ? pending.confirm(userId)
                     : pending.cancel(userId);
@@ -83,11 +103,27 @@ public class PendingToolController {
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "当前没有待确认的操作，可能已超时或已被处理");
             }
+
+            // 推送 SSE UPDATE 事件：原地更新对应 trace 状态
+            String traceId = before != null ? before.traceId() : null;
+            String requestId = before != null ? before.requestId() : null;
+            if (traceId != null && requestId != null) {
+                String state = isConfirm ? "ok" : "err";
+                String detail = isConfirm ? "已确认执行" : "已取消";
+                ToolTraceItem update = ToolTraceItem.update(traceId, state, 0L, detail);
+                activityRecorder.publishToolTrace(requestId, update);
+            }
+
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("status", result.type().name());
             body.put("reply", result.userReply() == null ? "" : result.userReply());
             if (result.rawToolResult() != null) {
                 body.put("rawResult", result.rawToolResult());
+            }
+            // 携带 trace 更新信息，供前端在 SSE 流已关闭时本地应用 UPDATE
+            if (traceId != null) {
+                body.put("traceId", traceId);
+                body.put("traceState", isConfirm ? "ok" : "err");
             }
             return body;
         }

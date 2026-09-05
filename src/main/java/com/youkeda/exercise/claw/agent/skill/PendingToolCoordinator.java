@@ -52,19 +52,31 @@ public class PendingToolCoordinator {
     // ==================== 创建待确认 ====================
 
     /**
-     * 高风险工具被 SafetyPolicy 拦截后调用，保存原始调用参数。
+     * 高风险工具被 SafetyPolicy 拦截后调用，保存原始调用参数（兼容旧调用）。
      */
     public PendingToolAction createPending(String userId, String toolName, String toolArguments) {
+        return createPending(userId, toolName, toolArguments, null, null);
+    }
+
+    /**
+     * 高风险工具被 SafetyPolicy 拦截后调用，保存原始调用参数。
+     *
+     * @param traceId   关联的工具 trace ID（用于 SSE UPDATE 原地替换）
+     * @param requestId 触发该操作的请求 ID（用于推送 SSE 事件）
+     */
+    public PendingToolAction createPending(String userId, String toolName, String toolArguments,
+                                           String traceId, String requestId) {
         String id = UUID.randomUUID().toString().substring(0, 8);
         Instant now = Instant.now();
         PendingToolAction action = new PendingToolAction(
                 id, userId, toolName, toolArguments,
                 SafetyPolicy.ToolRiskLevel.HIGH,
                 now, now.plusSeconds(PendingToolAction.DEFAULT_TTL_SECONDS),
-                PendingToolAction.Status.PENDING_CONFIRMATION);
+                PendingToolAction.Status.PENDING_CONFIRMATION,
+                traceId, requestId);
         store.put(userId, action);
-        log.info("创建待确认操作 | id={} | userId={} | tool={} | args={}",
-                id, userId, toolName, truncate(toolArguments, 80));
+        log.info("创建待确认操作 | id={} | userId={} | tool={} | traceId={} | args={}",
+                id, userId, toolName, traceId, truncate(toolArguments, 80));
         return action;
     }
 
@@ -142,7 +154,7 @@ public class PendingToolCoordinator {
             return expired(userId, pending);
         }
         store.remove(userId);
-        log.info("用户取消待确认操作 | id={} | tool={}", pending.id(), pending.toolName());
+        log.info("用户取消待确认操作 | id={} | tool={} | traceId={}", pending.id(), pending.toolName(), pending.traceId());
         return new Result(Result.Type.CANCELLED, pending.withStatus(PendingToolAction.Status.CANCELLED),
                 null, "已取消" + displayName(pending.toolName()) + "操作。");
     }
@@ -150,7 +162,7 @@ public class PendingToolCoordinator {
     private Result expired(String userId, PendingToolAction pending) {
         PendingToolAction expired = pending.withExpired();
         store.put(userId, expired);
-        log.info("待确认操作已过期 | id={} | tool={}", pending.id(), pending.toolName());
+        log.info("待确认操作已过期 | id={} | tool={} | traceId={}", pending.id(), pending.toolName(), pending.traceId());
         return new Result(Result.Type.EXPIRED, expired, null,
                 "操作已超时（超过" + (PendingToolAction.DEFAULT_TTL_SECONDS / 60) + "分钟），请重新发起。");
     }
@@ -161,14 +173,14 @@ public class PendingToolCoordinator {
         Tool tool = toolRegistry.find(action.toolName());
         if (tool == null) {
             store.remove(userId);
-            log.error("待确认工具未注册 | id={} | tool={}", action.id(), action.toolName());
+            log.error("待确认工具未注册 | id={} | tool={} | traceId={}", action.id(), action.toolName(), action.traceId());
             return new Result(Result.Type.FAILED, action.withStatus(PendingToolAction.Status.EXPIRED),
                     null, "工具 " + action.toolName() + " 暂时不可用。");
         }
 
         try {
-            log.info("执行已确认的高风险工具 | id={} | userId={} | tool={} | args={}",
-                    action.id(), userId, action.toolName(),
+            log.info("执行已确认的高风险工具 | id={} | userId={} | tool={} | traceId={} | args={}",
+                    action.id(), userId, action.toolName(), action.traceId(),
                     truncate(action.toolArguments(), 120));
 
             ToolExecutionContext execCtx = new ToolExecutionContext(
@@ -178,16 +190,16 @@ public class PendingToolCoordinator {
             PendingToolAction executed = action.withStatus(PendingToolAction.Status.EXECUTED);
             store.remove(userId);
 
-            log.info("已确认工具执行完成 | id={} | tool={} | result={}",
-                    action.id(), action.toolName(), truncate(result, 200));
+            log.info("已确认工具执行完成 | id={} | tool={} | traceId={} | result={}",
+                    action.id(), action.toolName(), action.traceId(), truncate(result, 200));
 
             return new Result(Result.Type.EXECUTED, executed, result,
                     formatConfirmationResult(action.toolName(), result));
 
         } catch (Exception e) {
             store.remove(userId);
-            log.error("已确认工具执行失败 | id={} | tool={} | error={}",
-                    action.id(), action.toolName(), e.getMessage(), e);
+            log.error("已确认工具执行失败 | id={} | tool={} | traceId={} | error={}",
+                    action.id(), action.toolName(), action.traceId(), e.getMessage(), e);
             return new Result(Result.Type.FAILED,
                     action.withStatus(PendingToolAction.Status.EXECUTED), null,
                     "执行" + displayName(action.toolName()) + "操作时出错："
@@ -260,8 +272,11 @@ public class PendingToolCoordinator {
 
     private String formatConfirmationResult(String toolName, String rawResult) {
         String display = displayName(toolName);
-        if (rawResult != null && rawResult.contains("\"status\":\"SUCCESS\"")
-                || rawResult != null && rawResult.contains("\"status\":\"success\"")) {
+        if (rawResult != null && (
+                rawResult.contains("\"status\":\"SUCCESS\"")
+                || rawResult.contains("\"status\":\"success\"")
+                || rawResult.contains("\"status\":\"created\"")
+                || rawResult.contains("\"status\":\"ok\""))) {
             return display + "操作已完成。" + extractSummary(rawResult);
         }
         return display + "操作已执行。";

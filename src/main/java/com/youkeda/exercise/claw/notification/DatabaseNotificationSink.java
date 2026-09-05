@@ -1,5 +1,6 @@
 package com.youkeda.exercise.claw.notification;
 
+import com.youkeda.exercise.claw.agent.memory.longterm.LongTermMemoryService;
 import com.youkeda.exercise.claw.identity.UserProfileRepository;
 import jakarta.annotation.PostConstruct;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -16,13 +17,19 @@ public class DatabaseNotificationSink implements NotificationSink {
     private final JdbcTemplate jdbc;
     private final UserProfileRepository profiles;
     private final NotificationStreamService streams;
+    private final EmailNotificationService emailNotificationService;
+    private final LongTermMemoryService longTermMemoryService;
 
     public DatabaseNotificationSink(JdbcTemplate jdbc,
                                     UserProfileRepository profiles,
-                                    NotificationStreamService streams) {
+                                    NotificationStreamService streams,
+                                    EmailNotificationService emailNotificationService,
+                                    LongTermMemoryService longTermMemoryService) {
         this.jdbc = jdbc;
         this.profiles = profiles;
         this.streams = streams;
+        this.emailNotificationService = emailNotificationService;
+        this.longTermMemoryService = longTermMemoryService;
     }
 
     @PostConstruct
@@ -80,7 +87,34 @@ public class DatabaseNotificationSink implements NotificationSink {
                 null, Math.max(1, Math.min(priority, 5)), actionPayload, "UNREAD",
                 Instant.ofEpochMilli(now), null);
         streams.notify(userId, record);
+
+        // === 邮件旁路通道：站内通知写入成功后，从长期记忆中检索邮箱并投递 ===
+        // 邮箱地址来自用户在"我的记忆"页面添加的个人信息记忆（如"我的邮箱是：xxx@qq.com"）
+        // 邮件发送失败不影响站内通知结果，EmailNotificationService 内部已做异常容错。
+        dispatchEmailIfEnabled(userId, source, title, content);
+
         return id;
+    }
+
+    /**
+     * 如果用户在长期记忆中绑定了邮箱，则投递一封邮件。
+     * 邮箱地址从长期记忆中自动检索提取，不需要单独的邮箱设置。
+     * 任何异常都在 EmailNotificationService 内部捕获，此处不抛出。
+     */
+    private void dispatchEmailIfEnabled(String userId, String source, String title, String content) {
+        try {
+            // 从长期记忆中检索邮箱地址（用户在"我的记忆"里添加的个人信息）
+            String email = longTermMemoryService.findEmailAddress(userId);
+            if (email == null || email.isBlank()) {
+                return;
+            }
+            emailNotificationService.sendNotification(email, title, content, source);
+        } catch (Exception e) {
+            // 兜底：邮件通道任何异常都不影响主流程
+            org.slf4j.LoggerFactory.getLogger(DatabaseNotificationSink.class)
+                    .warn("邮件旁路通道异常（已忽略）| userId={} | source={} | error={}",
+                            userId, source, e.getMessage());
+        }
     }
 
     @Override

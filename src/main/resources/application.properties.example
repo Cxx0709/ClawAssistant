@@ -230,3 +230,26 @@ anime.seasonRecommendation.enabled=true
 # ============================================
 # 工具调用循环最大轮次（默认 15）
 agent.max-rounds=15
+
+# ============================================
+# Email Notification (邮件提醒通道)
+# ============================================
+# 总开关：关闭后所有通知不再发邮件（站内通知不受影响）
+mail.notification.enabled=true
+# 发件人显示名称
+mail.notification.from-name=Claw Assistant
+# 邮件主题前缀（最终主题 = 前缀 + 通知标题）
+mail.notification.subject-prefix=[Claw提醒]
+
+# Spring Mail SMTP 配置（以 QQ 邮箱为例）
+# QQ邮箱需先在 设置->账户 中开启 SMTP 服务，并生成授权码（password 填授权码，不是QQ密码）
+spring.mail.host=smtp.qq.com
+spring.mail.port=465
+spring.mail.username=
+spring.mail.password=
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.ssl.enable=true
+spring.mail.properties.mail.smtp.starttls.enable=true
+spring.mail.properties.mail.smtp.connectiontimeout=5000
+spring.mail.properties.mail.smtp.timeout=5000
+spring.mail.properties.mail.smtp.writetimeout=5000

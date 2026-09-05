@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RestController
 @RequestMapping("/api/memories")
@@ -21,6 +23,7 @@ public class MemoryController {
     private final MemoryChangeStore changes;
     private final AuthenticatedUser users;
     private final UserExecutionContext context;
+    private static final Logger log = LoggerFactory.getLogger(MemoryController.class);
 
     public MemoryController(LongTermMemoryService memories, MemoryChangeStore changes,
                             AuthenticatedUser users, UserExecutionContext context) {

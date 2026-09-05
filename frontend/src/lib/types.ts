@@ -5,6 +5,7 @@ export type StreamEvent =
   | { type: 'skill'; name: string }
   | { type: 'tool_start'; name: string; skill?: string }
   | { type: 'tool_end'; name: string; skill?: string; ok: boolean; durationMs?: number; detail?: string }
+  | { type: 'tool_trace'; item: ToolItem }
   | { type: 'text'; content: string }
   | { type: 'done'; reply: string; silent?: boolean; artifacts?: Artifact[] }
   | { type: 'error'; message: string };
@@ -17,9 +18,10 @@ export interface PendingToolInfo {
   displayName: string;
   argsPreview?: string;
   expireAt?: string;
+  traceId?: string;
 }
 
-export type ToolState = 'running' | 'ok' | 'err';
+export type ToolState = 'running' | 'ok' | 'err' | 'WAIT_CONFIRM';
 
 export interface ToolItem {
   id: string;
@@ -28,6 +30,9 @@ export interface ToolItem {
   state: ToolState;
   durationMs?: number;
   detail?: string;
+  traceId?: string;
+  confirmPayload?: string;
+  eventType?: 'APPEND' | 'UPDATE';
 }
 
 export interface ChatMsg {

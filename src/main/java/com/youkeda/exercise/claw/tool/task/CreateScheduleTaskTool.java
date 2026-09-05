@@ -112,7 +112,7 @@ public class CreateScheduleTaskTool extends AbstractTool {
             String taskTypeDesc = task.isAgentTask() ? " [Agent任务]" : "";
 
             ObjectNode res = objectMapper.createObjectNode();
-            res.put("status", "created");
+            res.put("status", "SUCCESS");
             res.put("task_id", task.getId());
             res.put("content", task.getContent());
             res.put("execute_time", task.getExecuteTimeAsString());
