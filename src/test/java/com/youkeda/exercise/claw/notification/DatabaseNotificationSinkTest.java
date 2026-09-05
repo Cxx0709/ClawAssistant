@@ -12,10 +12,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class DatabaseNotificationSinkTest {
 
     private DatabaseNotificationSink notifications;
+    private UserProfileRepository profiles;
+    private EmailNotificationService emailService;
+    private LongTermMemoryService memories;
 
     @BeforeEach
     void setUp() {
@@ -26,15 +32,18 @@ class DatabaseNotificationSinkTest {
                     user_id TEXT PRIMARY KEY,
                     school_id INTEGER,
                     notifications_enabled INTEGER NOT NULL DEFAULT 1,
+                    email TEXT,
                     email_notifications_enabled INTEGER NOT NULL DEFAULT 1,
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL
                 )
                 """);
-        notifications = new DatabaseNotificationSink(jdbc, new UserProfileRepository(jdbc),
+        profiles = new UserProfileRepository(jdbc);
+        emailService = mock(EmailNotificationService.class);
+        memories = mock(LongTermMemoryService.class);
+        notifications = new DatabaseNotificationSink(jdbc, profiles,
                 new NotificationStreamService(new ObjectMapper()),
-                mock(EmailNotificationService.class),
-                mock(LongTermMemoryService.class));
+                emailService, memories);
         notifications.init();
     }
 
@@ -49,5 +58,37 @@ class DatabaseNotificationSinkTest {
         assertEquals(0, notifications.unreadCount("alice"));
         assertEquals(1, notifications.unreadCount("bob"));
         assertNull(notifications.list("bob", 10).get(0).readAt());
+    }
+
+    @Test
+    void emailUsesBoundProfileAddress() {
+        profiles.setEmail("alice", "alice@example.com");
+
+        notifications.publish("alice", "TEST", "Reminder", "Do the thing", 3, null);
+
+        verify(emailService).sendNotification("alice@example.com", "Reminder", "Do the thing", "TEST");
+        verify(memories, never()).findEmailAddress("alice");
+    }
+
+    @Test
+    void disabledEmailNotificationsDoNotSend() {
+        profiles.setEmail("alice", "alice@example.com");
+        profiles.setEmailNotificationsEnabled("alice", false);
+
+        notifications.publish("alice", "TEST", "Reminder", "Do the thing", 3, null);
+
+        verify(emailService, never()).sendNotification(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString());
+        verify(memories, never()).findEmailAddress("alice");
+    }
+
+    @Test
+    void emailFallsBackToLongTermMemory() {
+        when(memories.findEmailAddress("alice")).thenReturn("remembered@example.com");
+
+        notifications.publish("alice", "TEST", "Reminder", "Do the thing", 3, null);
+
+        verify(emailService).sendNotification("remembered@example.com", "Reminder", "Do the thing", "TEST");
     }
 }

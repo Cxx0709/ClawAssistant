@@ -99,6 +99,20 @@ export interface Artifact {
   boardData?: BoardView;
 }
 
+export interface ExamItem {
+  id: number;
+  courseName: string;
+  examDate: string;
+  startTime: string;
+  endTime: string;
+  location: string;
+  seatNumber: string;
+  examType: 'MIDTERM' | 'FINAL' | 'MAKEUP';
+  examTypeDisplay: string;
+  notes: string;
+  daysLeft: number;
+}
+
 export interface BoardView {
   title: string;            // 「杭州两日行程」
   stats: string;            // 「步行 12.4 km · 用餐 3 顿 · 预算约 ¥860」
@@ -143,6 +157,21 @@ export interface SystemStatus {
   activeGoalCount: number;
 }
 
+/** 定时/盯守任务（GET /api/tasks，TaskController 返回） */
+export interface ScheduledTaskItem {
+  id: number;
+  content: string;
+  taskType: 'REMINDER' | 'AGENT';
+  repeatType: 'NONE' | 'ONCE' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+  repeatInterval: number;
+  status: 'ACTIVE' | 'RUNNING' | 'DONE' | 'CANCELLED' | 'FAILED' | 'PAUSED';
+  /** "yyyy-MM-dd HH:mm:ss" */
+  executeTime?: string | null;
+  nextExecuteTime?: string | null;
+  createdTime?: string | null;
+  failureCount: number;
+}
+
 export interface AppUser {
   id: string;
   username: string;
@@ -159,4 +188,18 @@ export interface NotificationItem {
   status: 'UNREAD' | 'READ';
   /** 后端把 Instant 序列化成 epoch 秒（如 1788531403.027），前端需按秒转毫秒 */
   createdAt: number;
+}
+
+export interface TodayCourseItem {
+  courseName: string;
+  period: string;
+  classroom: string;
+  teacher: string;
+}
+
+export interface TodaySchedule {
+  date: string;
+  week: number;
+  calendarConfigured: boolean;
+  items: TodayCourseItem[];
 }

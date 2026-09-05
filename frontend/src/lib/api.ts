@@ -6,11 +6,14 @@ import type {
   MemoryItem,
   NotificationItem,
   PendingToolInfo,
+  ScheduledTaskItem,
   SystemStatus,
   Conversation,
   HistoryMessage,
   ConversationPage,
   MessagePage,
+  ExamItem,
+  TodaySchedule,
 } from './types';
 
 let csrfToken = '';
@@ -125,6 +128,10 @@ export async function uploadArtifact(file: File, signal?: AbortSignal): Promise<
   return (await res.json()) as Artifact;
 }
 
+export async function fetchArtifactPreview(id: string): Promise<{ fileName: string; mimeType: string; content: string }> {
+  return getJson(`/api/artifacts/${encodeURIComponent(id)}/preview`);
+}
+
 export async function fetchGoals(): Promise<GoalItem[]> {
   return getJson<GoalItem[]>('/api/webchat/goals').catch(() => []);
 }
@@ -139,6 +146,15 @@ export async function fetchActivities(): Promise<ActivityItem[]> {
 
 export async function fetchStatus(): Promise<SystemStatus | null> {
   return getJson<SystemStatus>('/api/webchat/status').catch(() => null);
+}
+
+export async function fetchUpcomingExams(): Promise<ExamItem[]> {
+  const data = await getJson<{ items: ExamItem[] }>('/api/workspace/exams');
+  return data.items;
+}
+
+export async function fetchTodaySchedule(): Promise<TodaySchedule | null> {
+  return getJson<TodaySchedule>('/api/workspace/today-courses').catch(() => null);
 }
 
 export async function fetchConversationPage(options: {
@@ -235,6 +251,37 @@ export async function markNotificationRead(id: number): Promise<void> {
   await apiFetch(`/api/notifications/${id}/read`, { method: 'POST' });
 }
 
+export async function markAllNotificationsRead(): Promise<void> {
+  await apiFetch('/api/notifications/read-all', { method: 'POST' }).catch(() => undefined);
+}
+
+// ===== 定时/盯守任务（Agent 雷达页） =====
+
+export async function fetchTasks(options: { type?: 'REMINDER' | 'AGENT' } = {}): Promise<ScheduledTaskItem[]> {
+  const params = new URLSearchParams();
+  if (options.type) params.set('type', options.type);
+  const suffix = params.size > 0 ? `?${params}` : '';
+  return getJson<ScheduledTaskItem[]>(`/api/tasks${suffix}`).catch(() => []);
+}
+
+export async function pauseTask(id: number): Promise<boolean> {
+  const res = await apiFetch(`/api/tasks/${id}/pause`, { method: 'POST' });
+  if (!res.ok) return false;
+  return ((await res.json()) as { updated: boolean }).updated;
+}
+
+export async function resumeTask(id: number): Promise<boolean> {
+  const res = await apiFetch(`/api/tasks/${id}/resume`, { method: 'POST' });
+  if (!res.ok) return false;
+  return ((await res.json()) as { updated: boolean }).updated;
+}
+
+export async function cancelTask(id: number): Promise<boolean> {
+  const res = await apiFetch(`/api/tasks/${id}/cancel`, { method: 'POST' });
+  if (!res.ok) return false;
+  return ((await res.json()) as { updated: boolean }).updated;
+}
+
 // ===== 待确认的高风险工具（Phase 5 前端确认） =====
 
 export interface PendingToolResponse {
@@ -311,6 +358,38 @@ async function readError(res: Response): Promise<string> {
   }
 }
 
+// ===== 生成图片看板（换风格重画） =====
+
+export type ImageStyleKey = 'SHINKAI' | 'FLAT' | 'INK' | 'REALISTIC';
+
+/** 与后端 ImageBoardController.ImageStyle 枚举对齐 */
+export const IMAGE_STYLE_OPTIONS: { key: ImageStyleKey; label: string }[] = [
+  { key: 'SHINKAI', label: '新海诚风' },
+  { key: 'FLAT', label: '扁平插画风' },
+  { key: 'INK', label: '水墨' },
+  { key: 'REALISTIC', label: '写实' },
+];
+
+export async function fetchArtifacts(limit = 50): Promise<Artifact[]> {
+  return getJson<Artifact[]>(`/api/artifacts?limit=${limit}`).catch(() => []);
+}
+
+/** 以某张图的原 prompt 换风格重画；生成约 20-60s，无内建超时（后端 90s 兜底） */
+export async function generateStyledImage(body: {
+  sourceArtifactId?: string;
+  prompt?: string;
+  style?: ImageStyleKey;
+}): Promise<Artifact> {
+  const res = await apiFetch('/api/workspace/images/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = (await res.json().catch(() => ({}))) as { artifact?: Artifact; error?: string };
+  if (!res.ok || !data.artifact) throw new Error(data.error || `生成失败（HTTP ${res.status}）`);
+  return data.artifact;
+}
+
 // ============ 工作台 ============
 
 export interface BoardItemResponse {
@@ -358,4 +437,3 @@ export async function updateBoardItem(
   });
   return await res.json();
 }
-

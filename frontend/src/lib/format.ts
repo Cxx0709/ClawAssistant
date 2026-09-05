@@ -122,3 +122,54 @@ export function activityDotColor(color?: string | null): string {
       return 'bg-[#0a84ff]';
   }
 }
+
+/** 时间戳 → 相对时间："刚刚" / "5 分钟前" / "3 小时前" / "昨天 14:30" / "9月1日" */
+export function timeAgo(ts?: number | null): string {
+  if (ts == null || Number.isNaN(ts)) return '';
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  const date = new Date(ts);
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  if (sameDay) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const hhmm = date.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+  if (date.toDateString() === yesterday.toDateString()) return `昨天 ${hhmm}`;
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+/** "yyyy-MM-dd HH:mm:ss" → 相对时间（后端 ScheduledTask 时间的展示用） */
+export function timeAgoFromDateString(value?: string | null): string {
+  if (!value) return '';
+  const ts = new Date(value.replace(' ', 'T')).getTime();
+  return Number.isNaN(ts) ? '' : timeAgo(ts);
+}
+
+/** "yyyy-MM-dd HH:mm:ss" → 倒计时文案："16:00 汇报" / "3 天后"（盯守卡下次执行用） */
+export function countdownFromDateString(value?: string | null): string {
+  if (!value) return '';
+  const ts = new Date(value.replace(' ', 'T')).getTime();
+  if (Number.isNaN(ts)) return '';
+  const diff = ts - Date.now();
+  if (diff <= 0) return '即将执行';
+  if (diff < 60_000) return '1 分钟内';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟后`;
+  if (diff < 86_400_000) {
+    const date = new Date(ts);
+    return `${date.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })}`;
+  }
+  return `${Math.floor(diff / 86_400_000)} 天后`;
+}
+
+/** 周期类型 + 间隔 → 人类可读节奏："一次性" / "每 2 小时" / "每天" / "每周" / "每月" */
+export function repeatLabel(repeatType?: string | null, repeatInterval?: number | null): string {
+  const interval = repeatInterval && repeatInterval > 1 ? repeatInterval : 1;
+  switch (repeatType) {
+    case 'DAILY': return interval > 1 ? `每 ${interval} 天` : '每天';
+    case 'WEEKLY': return interval > 1 ? `每 ${interval} 周` : '每周';
+    case 'MONTHLY': return interval > 1 ? `每 ${interval} 个月` : '每月';
+    default: return '一次性';
+  }
+}

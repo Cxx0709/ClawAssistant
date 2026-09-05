@@ -12,22 +12,20 @@ import static org.mockito.Mockito.*;
 class ScheduleReminderServiceTest {
     private final CourseRepository repository = mock(CourseRepository.class);
     private final SemesterService semesters = mock(SemesterService.class);
-    private final ScheduleTimeResolver times = mock(ScheduleTimeResolver.class);
     private final CourseService courses = mock(CourseService.class);
     private final NotificationSink sink = mock(NotificationSink.class);
     private final ScheduleReminderService reminders = new ScheduleReminderService(repository,
-            new SemesterConfig(), sink, semesters, times, courses);
+            new SemesterConfig(), sink, semesters, courses);
 
     /** 默认提醒时间 07:30 之后、宽限期（120 分钟）之内的时间点 */
     private final LocalDateTime now = LocalDateTime.of(2026, 9, 14, 7, 31);
 
     private void prepare() {
-        CourseEntity c = new CourseEntity("u", "高数", "", 1, 1, 2, "A101", 1, 16, "ALL");
+        CourseEntity c = new CourseEntity("u", "高数", "", 1, 7, 8, "A101", 1, 16, "ALL");
         c.setId(1L);
         when(repository.findAll()).thenReturn(List.of(c));
         when(courses.getCoursesOnDate(eq("u"), any(LocalDate.class))).thenReturn(
                 new CourseService.DateCourses(now.toLocalDate(), 2, 1L, true, List.of(c)));
-        when(times.formatTimeRange(eq("u"), anyInt(), anyInt())).thenReturn("08:00-09:40");
     }
 
     @Test void sendsOncePerDayAndAgainNextDay() {
@@ -81,7 +79,8 @@ class ScheduleReminderServiceTest {
         reminders.checkReminders(now);
         verify(sink).publish(eq("u"), eq("COURSE_DAILY"), eq("今日课表"),
                 argThat(msg -> msg.contains("高数") && msg.contains("A101")
-                        && msg.contains("08:00-09:40") && msg.contains("第2周")),
+                        && msg.contains("7-8节") && !msg.contains("08:00")
+                        && msg.contains("第2周")),
                 eq(5), isNull());
     }
 }

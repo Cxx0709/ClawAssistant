@@ -88,5 +88,15 @@ class ExamTest {
             when(mockRepo.findUpcoming(eq("u1"), anyString())).thenReturn(List.of(e));
             assertEquals(1, svc.getExamsWithinDays("u1", 10).size());
         }
+
+        @Test @DisplayName("看板只返回今天起 30 天内考试")
+        void upcomingThirtyDayWindow() {
+            var today = new ExamEntity("u1", "今天考试", LocalDate.now().toString(), "08:00", "10:00", "A101", "FINAL");
+            var day30 = new ExamEntity("u1", "第30天考试", LocalDate.now().plusDays(30).toString(), "08:00", "10:00", "A101", "FINAL");
+            var day31 = new ExamEntity("u1", "第31天考试", LocalDate.now().plusDays(31).toString(), "08:00", "10:00", "A101", "FINAL");
+            when(mockRepo.findUpcoming(eq("u1"), anyString())).thenReturn(List.of(today, day30, day31));
+
+            assertEquals(List.of(today, day30), svc.getUpcomingExams("u1"));
+        }
     }
 }

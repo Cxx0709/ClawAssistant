@@ -4,6 +4,7 @@ import Markdown from '../components/Markdown';
 import RightRail from '../components/RightRail';
 import ToolTrace from '../components/ToolTrace';
 import AgentRadarPage from './AgentRadarPage';
+import AgentDebugPage from './AgentDebugPage';
 import { executionLabel, executionState } from '../lib/execution';
 import PendingConfirmation from '../components/PendingConfirmation';
 import ConversationSidebar from '../components/ConversationSidebar';
@@ -48,6 +49,7 @@ export default function ChatPage({ onHome, user, onLogout }: {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [radarOpen, setRadarOpen] = useState(() => new URLSearchParams(window.location.search).has('radar'));
+  const [radarDebug, setRadarDebug] = useState(() => new URLSearchParams(window.location.search).has('debug'));
   const [historyRefresh, setHistoryRefresh] = useState(0);
   const chatRootRef = useRef<HTMLDivElement>(null);
   const radarHistoryRef = useRef(false);
@@ -56,6 +58,11 @@ export default function ChatPage({ onHome, user, onLogout }: {
   const [railOpen, setRailOpen] = useState(false);
   const [railToken, setRailToken] = useState(0);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null);
+  const [fileGeneration, setFileGeneration] = useState<{ active: boolean; startedAt: number }>({
+    active: false,
+    startedAt: 0,
+  });
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [archivedConversations, setArchivedConversations] = useState<Conversation[]>([]);
@@ -97,20 +104,32 @@ export default function ChatPage({ onHome, user, onLogout }: {
     radarScrollRef.current = scrollRef.current?.scrollTop ?? null;
     const url = new URL(window.location.href);
     url.searchParams.set('radar', '');
+    url.searchParams.delete('debug');
     window.history.pushState(null, '', url);
     radarHistoryRef.current = true;
+    setRadarDebug(false);
     setRadarOpen(true);
+  }, []);
+
+  const openRadarDebug = useCallback(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('radar', '');
+    url.searchParams.set('debug', '');
+    window.history.replaceState(null, '', url);
+    setRadarDebug(true);
   }, []);
 
   const closeRadar = useCallback(() => {
     chatRootRef.current?.removeAttribute('inert');
     setRadarOpen(false);
+    setRadarDebug(false);
     if (radarHistoryRef.current) {
       radarHistoryRef.current = false;
       window.history.back();
     } else {
       const url = new URL(window.location.href);
       url.searchParams.delete('radar');
+      url.searchParams.delete('debug');
       window.history.replaceState(null, '', url);
     }
   }, []);
@@ -119,6 +138,7 @@ export default function ChatPage({ onHome, user, onLogout }: {
     const onPopState = () => {
       radarHistoryRef.current = false;
       const open = new URLSearchParams(window.location.search).has('radar');
+      setRadarDebug(open && new URLSearchParams(window.location.search).has('debug'));
       const requested = new URLSearchParams(window.location.search).get('conversation');
       if (requested) setConversationId(requested);
       if (open) radarScrollRef.current = scrollRef.current?.scrollTop ?? null;
@@ -539,6 +559,12 @@ export default function ChatPage({ onHome, user, onLogout }: {
               { id: key, name: evt.name, skill: evt.skill ?? '', state: 'running' as const },
             ],
           }));
+          if (evt.name === 'file_generate') {
+            setFocusedArtifactId(null);
+            setFileGeneration({ active: true, startedAt: Date.now() });
+            setRailOpen(false);
+            setWorkspaceOpen(true);
+          }
           break;
         }
         case 'tool_end':
@@ -562,6 +588,9 @@ export default function ChatPage({ onHome, user, onLogout }: {
             };
             return { ...m, tools: next };
           });
+          if (evt.name === 'file_generate' && !evt.ok) {
+            setFileGeneration((state) => ({ ...state, active: false }));
+          }
           break;
         case 'tool_trace': {
           const item = evt.item;
@@ -591,6 +620,8 @@ export default function ChatPage({ onHome, user, onLogout }: {
           break;
         case 'done': {
           const buffered = takeBufferedText();
+          const generatedFile = (evt.artifacts ?? []).find((artifact) => artifact.kind === 'FILE');
+          setFileGeneration((state) => ({ ...state, active: false }));
           // done 携带全文，以它为最终兜底（流式丢字也不漏）
           patchStream((m) => ({
             ...m,
@@ -600,11 +631,17 @@ export default function ChatPage({ onHome, user, onLogout }: {
             status: 'COMPLETED',
             artifacts: evt.artifacts ?? [],
           }));
+          if (generatedFile) {
+            setFocusedArtifactId(generatedFile.id);
+            setRailOpen(false);
+            setWorkspaceOpen(true);
+          }
           refreshRail();
           void reloadConversations();
           break;
         }
         case 'error': {
+          setFileGeneration((state) => ({ ...state, active: false }));
           const buffered = takeBufferedText();
           patchStream((m) => ({
             ...m,
@@ -991,7 +1028,12 @@ export default function ChatPage({ onHome, user, onLogout }: {
               onClick={() => setWorkspaceOpen(false)}
             />
             <div className="fixed inset-y-0 right-0 z-40 w-[85vw] max-w-[400px] shadow-[-8px_0_30px_-18px_rgba(20,21,23,.25)] lg:static lg:z-auto lg:w-[400px] lg:max-w-none lg:shrink-0 lg:shadow-none">
-              <WorkspaceCanvas artifacts={workspaceArtifacts} />
+              <WorkspaceCanvas
+                artifacts={workspaceArtifacts}
+                refreshToken={railToken}
+                focusedArtifactId={focusedArtifactId}
+                fileGeneration={fileGeneration}
+              />
             </div>
           </>
         )}
@@ -1004,19 +1046,24 @@ export default function ChatPage({ onHome, user, onLogout }: {
         </div>
       )}
     </div>
-    {radarOpen && <AgentRadarPage
-      key={conversationId}
-      messages={historyLoading ? [] : messages}
-      conversationTitle={[...conversations, ...archivedConversations].find(item => item.id === conversationId)?.title || '当前会话'}
-      loading={historyLoading || conversationsLoading}
-      error={historyError}
-      canRefresh={!!conversationId && !busy && !messages.some(message => message.streaming)}
-      hasOlder={!!historyCursor}
-      loadingOlder={olderLoading}
-      onRefresh={() => setHistoryRefresh(value => value + 1)}
-      onLoadOlder={() => void loadOlderMessages()}
-      onBack={closeRadar}
-    />}
+    {radarOpen && (radarDebug
+      ? <AgentDebugPage
+        key={`debug-${conversationId}`}
+        messages={historyLoading ? [] : messages}
+        conversationTitle={[...conversations, ...archivedConversations].find(item => item.id === conversationId)?.title || '当前会话'}
+        loading={historyLoading || conversationsLoading}
+        error={historyError}
+        canRefresh={!!conversationId && !busy && !messages.some(message => message.streaming)}
+        hasOlder={!!historyCursor}
+        loadingOlder={olderLoading}
+        onRefresh={() => setHistoryRefresh(value => value + 1)}
+        onLoadOlder={() => void loadOlderMessages()}
+        onBack={closeRadar}
+      />
+      : <AgentRadarPage
+        onBack={closeRadar}
+        onOpenDebug={openRadarDebug}
+      />)}
     </>
   );
 }

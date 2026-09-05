@@ -53,7 +53,6 @@ public class ScheduleReminderService {
     private final SemesterConfig semesterConfig;
     private final NotificationSink notificationSink;
     private final SemesterService semesterService;
-    private final ScheduleTimeResolver timeResolver;
     private final CourseService courseService;
 
     /** 已发送缓存，key = userId:date（yyyyMMdd），每用户每天最多一条。 */
@@ -63,13 +62,11 @@ public class ScheduleReminderService {
                                    SemesterConfig semesterConfig,
                                    NotificationSink notificationSink,
                                    SemesterService semesterService,
-                                   ScheduleTimeResolver timeResolver,
                                    CourseService courseService) {
         this.courseRepository = courseRepository;
         this.semesterConfig = semesterConfig;
         this.notificationSink = notificationSink;
         this.semesterService = semesterService;
-        this.timeResolver = timeResolver;
         this.courseService = courseService;
     }
 
@@ -168,12 +165,8 @@ public class ScheduleReminderService {
                 .sorted(java.util.Comparator.comparingInt(CourseEntity::getStartPeriod))
                 .toList();
         for (CourseEntity course : sorted) {
-            String timeRange = timeResolver.formatTimeRange(course.getUserId(),
-                    course.getStartPeriod(), course.getEndPeriod());
             sb.append("📖 ").append(course.getCourseName());
-            if (timeRange != null && !timeRange.isBlank()) {
-                sb.append("  ").append(timeRange).append(" (").append(course.getPeriodDisplay()).append("节)");
-            }
+            sb.append("  ").append(course.getPeriodDisplay()).append("节");
             sb.append("\n");
             if (course.getClassroom() != null && !course.getClassroom().isBlank()) {
                 sb.append("🏫 ").append(course.getClassroom()).append("\n");

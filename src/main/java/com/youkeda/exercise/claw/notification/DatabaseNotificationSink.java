@@ -88,8 +88,7 @@ public class DatabaseNotificationSink implements NotificationSink {
                 Instant.ofEpochMilli(now), null);
         streams.notify(userId, record);
 
-        // === 邮件旁路通道：站内通知写入成功后，从长期记忆中检索邮箱并投递 ===
-        // 邮箱地址来自用户在"我的记忆"页面添加的个人信息记忆（如"我的邮箱是：xxx@qq.com"）
+        // === 邮件旁路通道：站内通知写入成功后，按用户设置投递 ===
         // 邮件发送失败不影响站内通知结果，EmailNotificationService 内部已做异常容错。
         dispatchEmailIfEnabled(userId, source, title, content);
 
@@ -97,14 +96,19 @@ public class DatabaseNotificationSink implements NotificationSink {
     }
 
     /**
-     * 如果用户在长期记忆中绑定了邮箱，则投递一封邮件。
-     * 邮箱地址从长期记忆中自动检索提取，不需要单独的邮箱设置。
+     * 用户开启邮件提醒时投递邮件。优先使用用户资料中绑定的邮箱，
+     * 未绑定时回退到长期记忆中识别出的邮箱，以兼容既有用户数据。
      * 任何异常都在 EmailNotificationService 内部捕获，此处不抛出。
      */
     private void dispatchEmailIfEnabled(String userId, String source, String title, String content) {
         try {
-            // 从长期记忆中检索邮箱地址（用户在"我的记忆"里添加的个人信息）
-            String email = longTermMemoryService.findEmailAddress(userId);
+            if (!profiles.emailNotificationsEnabled(userId)) {
+                return;
+            }
+            String email = profiles.getEmail(userId);
+            if (email == null || email.isBlank()) {
+                email = longTermMemoryService.findEmailAddress(userId);
+            }
             if (email == null || email.isBlank()) {
                 return;
             }

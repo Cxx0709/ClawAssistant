@@ -44,7 +44,8 @@ public class FileSaveTool extends AbstractTool {
     @Override
     public String getDescription() {
         return "保存文本内容到用户的文件存储。当用户说「保存这段内容」「帮我存一下」「记下来」「记录一下」时调用。"
-                + "调用后文件会自动保存到用户的知识库。文件名必须包含扩展名（md/txt/pdf/docx）。";
+                + "保存后只说明文件已保存；不得声称保存到了知识库。"
+                + "文件名必须包含扩展名（md/txt/pdf/docx）。";
     }
 
     @Override
@@ -90,7 +91,7 @@ public class FileSaveTool extends AbstractTool {
             result.put("file_type", metadata.getFileType());
             result.put("size", metadata.getSize());
             result.put("created_time", metadata.getCreatedTime() != null ? metadata.getCreatedTime() : "");
-            result.put("message", "文件已保存到你的知识库");
+            result.put("message", "文件已保存");
 
             log.info("file_save 完成 | userId={} | fileId={} | filename={}",
                     userId, metadata.getId(), filename);

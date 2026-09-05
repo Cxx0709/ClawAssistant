@@ -16,11 +16,16 @@ function load(relativePath) {
   new Function('require', 'exports', outputText)((name) =>
     name === '../lib/format' || name === './format' ? load('../src/lib/format.ts')
       : name === '../lib/execution' ? load('../src/lib/execution.ts')
-      : name === '../components/ToolTrace' ? load('../src/components/ToolTrace.tsx') : require(name), exports);
+      : name === '../lib/api' ? load('../src/lib/api.ts')
+      : name === '../components/ToolTrace' ? load('../src/components/ToolTrace.tsx')
+      : name === '../components/PendingConfirmCard' ? load('../src/components/PendingConfirmCard.tsx')
+      : name === '../components/WatchTaskCard' ? load('../src/components/WatchTaskCard.tsx')
+      : name === '../components/ActivityTimeline' ? load('../src/components/ActivityTimeline.tsx') : require(name), exports);
   return exports;
 }
 const ToolTrace = load('../src/components/ToolTrace.tsx').default;
 const { executionRecords, executionLabel } = load('../src/lib/execution.ts');
+const DebugRadar = load('../src/pages/AgentDebugPage.tsx').default;
 const Radar = load('../src/pages/AgentRadarPage.tsx').default;
 const render = (props) => renderToStaticMarkup(React.createElement(ToolTrace, {
   tools: [], skills: [], running: true, open: false, onToggle() {}, ...props,
@@ -76,8 +81,8 @@ test('radar pairs requests with replies without inventing records or missing que
   assert.deepEqual(executionRecords([]), []);
 });
 
-test('radar distinguishes empty, loading and failed requests', () => {
-  const renderRadar = (props = {}) => renderToStaticMarkup(React.createElement(Radar, {
+test('debug view distinguishes empty, loading and failed requests', () => {
+  const renderRadar = (props = {}) => renderToStaticMarkup(React.createElement(DebugRadar, {
     messages: [], conversationTitle: '测试会话', loading: false, error: '', canRefresh: true,
     hasOlder: false, loadingOlder: false, onRefresh() {}, onLoadOlder() {}, onBack() {}, ...props,
   }));
@@ -89,4 +94,13 @@ test('radar distinguishes empty, loading and failed requests', () => {
   assert.match(loading, /正在读取执行记录/);
   assert.ok(!loading.includes('还没有执行记录'));
   assert.ok(!renderRadar().includes('travel-planner'));
+});
+
+test('customer radar renders watch/discover sections; SSR shows loading state and no pending card', () => {
+  const markup = renderToStaticMarkup(React.createElement(Radar, { onBack() {}, onOpenDebug() {} }));
+  assert.match(markup, /正在盯守/);
+  assert.match(markup, /Agent 的发现/);
+  assert.match(markup, /正在读取盯守任务/);
+  assert.ok(!markup.includes('待你处理'));
+  assert.ok(markup.includes('开发者视图'));
 });
