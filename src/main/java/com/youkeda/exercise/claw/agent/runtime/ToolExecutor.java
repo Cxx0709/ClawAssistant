@@ -18,6 +18,7 @@ import com.youkeda.exercise.claw.agent.skill.PendingToolCoordinator;
 import com.youkeda.exercise.claw.agent.skill.SkillPendingCoordinator;
 import com.youkeda.exercise.claw.agent.skill.SkillSession;
 import com.youkeda.exercise.claw.ai.llm.LLMResponse;
+import com.youkeda.exercise.claw.web.conversation.ToolTraceItem;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +30,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 工具调用执行器。
@@ -135,15 +137,23 @@ public class ToolExecutor {
             }
             // 安全检查阻止
             else if (blockedReason != null) {
-                result = policyBlocked(blockedReason);
-                resultStatus = ResultStatus.BLOCKED;
-                activityRecorder.toolBlocked(
-                        activityRequestId, toolSkillName, toolName, blockedReason);
-                // Phase 5: 高风险工具创建待确认操作（SafetyPolicy 返回 BLOCKED_CONFIRM_REQUIRED）
-                if (blockedReason.contains("CONFIRM_REQUIRED")) {
+                boolean needsConfirm = blockedReason.contains("CONFIRM_REQUIRED");
+                if (needsConfirm) {
+                    // ❗ 禁止生成 ERR trace；改为 WAIT_CONFIRM 待确认状态，SSE 原地更新闭环
+                    String traceId = UUID.randomUUID().toString();
+                    ToolTraceItem waitItem = ToolTraceItem.append(
+                            null, toolName, toolSkillName, "WAIT_CONFIRM",
+                            0L, "高风险工具，等待人工确认", traceId, tc.arguments());
+                    activityRecorder.publishToolTrace(activityRequestId, waitItem);
                     pendingToolCoordinator.createPending(
-                            execContext.userId(), toolName, tc.arguments());
+                            execContext.userId(), toolName, tc.arguments(), traceId, activityRequestId);
+                    result = confirmRequiredResult(toolName, traceId);
+                } else {
+                    result = policyBlocked(blockedReason);
+                    activityRecorder.toolBlocked(
+                            activityRequestId, toolSkillName, toolName, blockedReason);
                 }
+                resultStatus = ResultStatus.BLOCKED;
             }
             // 工具调用数量上限
             else if (toolCallCount >= MAX_TOOL_CALLS) {
@@ -262,6 +272,21 @@ public class ToolExecutor {
         } catch (Exception jsonEx) {
             return "{\"status\":\"ERROR\",\"errorCode\":\"TOOL_EXECUTION_FAILED\","
                     + "\"message\":\"工具执行异常\",\"fallback_required\":true}";
+        }
+    }
+
+    /** 高风险工具待确认：给 LLM 的提示明确指向界面上方的确认卡片按钮，并携带 traceId。 */
+    private String confirmRequiredResult(String toolName, String traceId) {
+        try {
+            var node = objectMapper.createObjectNode();
+            node.put("status", "BLOCKED");
+            node.put("reason", "CONFIRM_REQUIRED");
+            node.put("traceId", traceId);
+            node.put("confirmHint",
+                    "该操作已生成确认卡片。请这样回复用户：此操作需要确认，请点击界面上方黄色确认卡片中的【确认】按钮完成，无需在聊天中输入任何文字。");
+            return objectMapper.writeValueAsString(node);
+        } catch (Exception e) {
+            return "{\"status\":\"BLOCKED\",\"reason\":\"CONFIRM_REQUIRED\",\"traceId\":\"" + traceId + "\"}";
         }
     }
 

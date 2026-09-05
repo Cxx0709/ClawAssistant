@@ -18,6 +18,8 @@ import java.time.Instant;
  * @param createdAt     创建时间
  * @param expireAt      过期时间（默认 5 分钟）
  * @param status        状态
+ * @param traceId       关联的工具 trace ID（用于 SSE UPDATE 原地替换）
+ * @param requestId     触发该操作的请求 ID（用于推送 SSE 事件）
  */
 public record PendingToolAction(
         String id,
@@ -27,7 +29,9 @@ public record PendingToolAction(
         SafetyPolicy.ToolRiskLevel riskLevel,
         Instant createdAt,
         Instant expireAt,
-        Status status
+        Status status,
+        String traceId,
+        String requestId
 ) {
     public enum Status {
         /** 等待用户确认 */
@@ -45,16 +49,23 @@ public record PendingToolAction(
     /** 默认过期时间：5 分钟 */
     public static final long DEFAULT_TTL_SECONDS = 300;
 
+    /** 兼容旧调用：8 参数构造（无 traceId / requestId）。 */
+    public PendingToolAction(String id, String userId, String toolName, String toolArguments,
+                             SafetyPolicy.ToolRiskLevel riskLevel, Instant createdAt,
+                             Instant expireAt, Status status) {
+        this(id, userId, toolName, toolArguments, riskLevel, createdAt, expireAt, status, null, null);
+    }
+
     public PendingToolAction withStatus(Status newStatus) {
         return new PendingToolAction(
                 id, userId, toolName, toolArguments, riskLevel,
-                createdAt, expireAt, newStatus);
+                createdAt, expireAt, newStatus, traceId, requestId);
     }
 
     public PendingToolAction withExpired() {
         return new PendingToolAction(
                 id, userId, toolName, toolArguments, riskLevel,
-                createdAt, expireAt, Status.EXPIRED);
+                createdAt, expireAt, Status.EXPIRED, traceId, requestId);
     }
 
     public boolean isExpired() {

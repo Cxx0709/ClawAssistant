@@ -37,10 +37,7 @@ public class SafetyPolicy {
      */
     private static final Set<String> HIGH_RISK_TOOLS = Set.of(
             "file_delete",
-            "file_update",
-            "create_schedule_task",
-            "update_schedule_task",
-            "cancel_schedule_task"
+            "file_update"
     );
 
     /**

@@ -116,6 +116,7 @@ public class ArtifactService {
             case IMAGE -> "image.png";
             case AUDIO -> "audio.mp3";
             case FILE -> "download.bin";
+            case BOARD -> "board.json";
         };
         if (value == null || value.isBlank()) return fallback;
         String name = Path.of(value).getFileName().toString().replaceAll("[\\r\\n\\t]", "_");

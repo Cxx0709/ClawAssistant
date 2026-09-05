@@ -32,7 +32,7 @@ class SafetyPolicyTest {
     void shouldClassifyHighRiskToolsCorrectly() {
         SafetyPolicy policy = new SafetyPolicy();
         assertEquals(SafetyPolicy.ToolRiskLevel.HIGH, policy.getRiskLevel("file_delete"));
-        assertEquals(SafetyPolicy.ToolRiskLevel.HIGH, policy.getRiskLevel("cancel_schedule_task"));
+        assertEquals(SafetyPolicy.ToolRiskLevel.HIGH, policy.getRiskLevel("file_update"));
     }
 
     @Test
@@ -209,8 +209,7 @@ class SafetyPolicyTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "file_delete", "file_update",
-            "create_schedule_task", "update_schedule_task", "cancel_schedule_task"
+            "file_delete", "file_update"
     })
     void allHighRiskToolsShouldBeBlocked(String toolName) {
         SafetyPolicy policy = new SafetyPolicy();

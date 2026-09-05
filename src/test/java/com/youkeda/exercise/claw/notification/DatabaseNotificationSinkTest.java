@@ -1,6 +1,7 @@
 package com.youkeda.exercise.claw.notification;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.youkeda.exercise.claw.agent.memory.longterm.LongTermMemoryService;
 import com.youkeda.exercise.claw.identity.UserProfileRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,6 +11,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 class DatabaseNotificationSinkTest {
 
@@ -24,12 +26,15 @@ class DatabaseNotificationSinkTest {
                     user_id TEXT PRIMARY KEY,
                     school_id INTEGER,
                     notifications_enabled INTEGER NOT NULL DEFAULT 1,
+                    email_notifications_enabled INTEGER NOT NULL DEFAULT 1,
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL
                 )
                 """);
         notifications = new DatabaseNotificationSink(jdbc, new UserProfileRepository(jdbc),
-                new NotificationStreamService(new ObjectMapper()));
+                new NotificationStreamService(new ObjectMapper()),
+                mock(EmailNotificationService.class),
+                mock(LongTermMemoryService.class));
         notifications.init();
     }
 
