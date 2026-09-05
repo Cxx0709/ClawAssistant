@@ -127,7 +127,7 @@ public class TaskSchedulerService {
                 }
             }
 
-            // 2. 定期触发课前提醒扫描（每 12 次 / 约 60 秒一次，避免过于频繁）
+            // 2. 定期触发每日课表提醒扫描（每 12 次 / 约 60 秒一次，避免过于频繁）
             scanCounter++;
             if (scanCounter >= reminderScanInterval) {
                 scanCounter = 0;
@@ -147,12 +147,12 @@ public class TaskSchedulerService {
         }
     }
 
-    /** 执行池内安全执行课前提醒扫描 */
+    /** 执行池内安全执行每日课表提醒扫描 */
     private void safeCheckReminders() {
         try {
             scheduleReminderService.checkReminders();
         } catch (Throwable t) {
-            log.error("执行池内课前提醒扫描异常", t);
+            log.error("执行池内每日课表提醒扫描异常", t);
         }
     }
 

@@ -7,9 +7,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
@@ -17,36 +17,37 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
- * 课前提醒服务
+ * 每日课表提醒服务
  *
  * <p>无独立调度线程，依赖外部（{@link com.youkeda.exercise.claw.feature.task.scheduler.TaskSchedulerService}）
- * 周期性调用 {@link #checkReminders()} 来扫描课程并发送提醒。
+ * 周期性调用 {@link #checkReminders()} 来扫描并发送提醒。
  *
- * <p>扫描逻辑：
+ * <p>提醒逻辑：
  * <ul>
- *   <li>每 60 秒扫描一次所有用户的课程（由 {@code TaskSchedulerService} 触发）</li>
- *   <li>课程开始前 30 分钟（±30 秒容差）发送站内提醒</li>
- *   <li>自动判断当前教学周和单双周</li>
+ *   <li>每天在固定时间（{@code schedule.daily-reminder.time}，默认 07:30）向有课用户推送当日课表汇总</li>
+ *   <li>错过窗口（超过 {@code schedule.daily-reminder.grace-minutes}，默认 120 分钟）则当天不再补发</li>
+ *   <li>自动判断当前教学周和单双周，学期未配置或当天无课的用户不推送</li>
  * </ul>
  *
- * <p>提醒去重：使用内存缓存 {@link #notifiedCache} 避免同一天同一门课重复发送。
- * 缓存最多保留 10000 条，超限时全量清理。
+ * <p>历史说明：曾按各学校作息做「课前 30 分钟」提醒，因学校绑定功能从未开放、
+ * 所有用户实际共用默认作息，已改为每日定时推送当日课表。
  *
- * <p>课程开始时间通过 {@link ScheduleTimeResolver} 根据用户绑定的学校作息配置动态计算，
- * 不再使用硬编码的固定节次时间表。
+ * <p>去重：内存缓存 key = userId:date，每用户每天最多一条。
  */
 @Component
 public class ScheduleReminderService {
 
     private static final Logger log = LoggerFactory.getLogger(ScheduleReminderService.class);
 
-    /** 提醒提前量：30 分钟（可通过 schedule.reminder.advance-minutes 配置） */
-    @Value("${schedule.reminder.advance-minutes:30}")
-    private int reminderAdvanceMinutes = 30;
+    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
 
-    /** 提醒窗口容差（秒）：允许提前或滞后触发（可通过 schedule.reminder.tolerance-seconds 配置） */
-    @Value("${schedule.reminder.tolerance-seconds:30}")
-    private int reminderToleranceSeconds = 30;
+    /** 每日提醒时间（HH:mm，可通过 schedule.daily-reminder.time 配置） */
+    @Value("${schedule.daily-reminder.time:07:30}")
+    private String reminderTime = "07:30";
+
+    /** 错过提醒时间后的补发宽限期（分钟，可通过 schedule.daily-reminder.grace-minutes 配置） */
+    @Value("${schedule.daily-reminder.grace-minutes:120}")
+    private int graceMinutes = 120;
 
     private final CourseRepository courseRepository;
     private final SemesterConfig semesterConfig;
@@ -55,7 +56,7 @@ public class ScheduleReminderService {
     private final ScheduleTimeResolver timeResolver;
     private final CourseService courseService;
 
-    /** 已发送提醒缓存，key = userId:courseId:课程开始时间；改时间后可重新提醒。 */
+    /** 已发送缓存，key = userId:date（yyyyMMdd），每用户每天最多一条。 */
     private final ConcurrentHashMap<String, Boolean> notifiedCache = new ConcurrentHashMap<>();
 
     public ScheduleReminderService(CourseRepository courseRepository,
@@ -74,12 +75,11 @@ public class ScheduleReminderService {
 
     @PostConstruct
     public void init() {
-        log.info("课前提醒服务已启动 | advance={}min | tolerance={}s",
-                reminderAdvanceMinutes, reminderToleranceSeconds);
+        log.info("每日课表提醒服务已启动 | time={} | grace={}min", reminderTime, graceMinutes);
     }
 
     /**
-     * 扫描全部课程，检查是否需要发送提醒。
+     * 扫描全部用户，检查是否到达每日提醒时间。
      *
      * <p>由 {@code TaskSchedulerService} 定期调用（约每 60 秒一次）。
      * 多次调用安全：内部使用去重缓存防止重复发送。
@@ -90,156 +90,117 @@ public class ScheduleReminderService {
 
     void checkReminders(LocalDateTime now) {
         try {
-            List<CourseEntity> allCourseEntitys = courseRepository.findAll();
-            if (allCourseEntitys.isEmpty()) {
+            LocalTime target = parseReminderTime();
+            LocalDateTime targetAt = now.toLocalDate().atTime(target);
+            if (now.isBefore(targetAt) || now.isAfter(targetAt.plusMinutes(graceMinutes))) {
+                return; // 未到提醒时间或已错过窗口
+            }
+
+            List<CourseEntity> allCourses = courseRepository.findAll();
+            if (allCourses.isEmpty()) {
                 return;
             }
 
-            int today = now.getDayOfWeek().getValue();
-
-            // 按用户分组，每个用户独立计算当前教学周
-            Map<String, List<CourseEntity>> coursesByUser = allCourseEntitys.stream()
-                    .collect(Collectors.groupingBy(CourseEntity::getUserId));
-
+            String dateKey = now.toLocalDate().format(DateTimeFormatter.BASIC_ISO_DATE);
             int sentCount = 0;
-            for (Map.Entry<String, List<CourseEntity>> entry : coursesByUser.entrySet()) {
-                String userId = entry.getKey();
-                CourseService.DateCourses schedule = courseService.getCoursesOnDate(userId, now.toLocalDate());
-                int currentWeek = schedule.week();
-                if (!schedule.calendarConfigured() || currentWeek <= 0) {
-                    continue; // 该用户学期未开始
-                }
 
-                for (CourseEntity course : schedule.courses()) {
-                    try {
-                        if (checkCourseEntity(course, currentWeek, today, now)) {
-                            sentCount++;
-                        }
-                    } catch (Exception e) {
-                        log.warn("检查课程提醒异常 | userId={} | courseId={} | error={}",
-                                userId, course.getId(), e.getMessage());
+            // 按用户分组，每个用户独立判断当天是否有课
+            for (String userId : allCourses.stream()
+                    .map(CourseEntity::getUserId).distinct().collect(Collectors.toList())) {
+                if (notifiedCache.putIfAbsent(userId + ":" + dateKey, Boolean.TRUE) != null) {
+                    continue; // 今天已提醒
+                }
+                try {
+                    if (sendDailyDigest(userId, now.toLocalDate())) {
+                        sentCount++;
+                    } else {
+                        notifiedCache.remove(userId + ":" + dateKey); // 允许宽限期内重试
                     }
+                } catch (Exception e) {
+                    notifiedCache.remove(userId + ":" + dateKey);
+                    log.warn("每日课表提醒异常 | userId={} | error={}", userId, e.getMessage());
                 }
             }
 
             if (sentCount > 0) {
-                log.info("课前提醒扫描完成 | sent={} | totalCourseEntitys={}", sentCount, allCourseEntitys.size());
+                log.info("每日课表提醒完成 | sent={} | date={}", sentCount, now.toLocalDate());
             }
-
-            // 清理缓存（避免内存泄漏）
             cleanCacheIfNeeded();
 
         } catch (Exception e) {
-            log.error("课前提醒扫描异常", e);
+            log.error("每日课表提醒扫描异常", e);
         }
     }
 
     /**
-     * 检查单条课程是否需要发送提醒
+     * 向单个用户发送当日课表汇总
      *
-     * @return true 表示已发送提醒
+     * @return true 表示已发送
      */
-    private boolean checkCourseEntity(CourseEntity course, int currentWeek, int today, LocalDateTime now) {
-        // 1. 不是今天的课 → 跳过
-        if (course.getDayOfWeek() != today) return false;
+    private boolean sendDailyDigest(String userId, LocalDate date) {
+        CourseService.DateCourses schedule = courseService.getCoursesOnDate(userId, date);
+        if (!schedule.calendarConfigured() || schedule.week() <= 0 || schedule.courses().isEmpty()) {
+            return false; // 学期未开始或今天没课，不推送
+        }
 
-        // 2. 本周不上课 → 跳过
-        if (!course.isActiveInWeek(currentWeek)) return false;
-
-        // 3. 计算课程开始时间
-        LocalDateTime courseStartTime = getCourseEntityStartTime(course, now.toLocalDate());
-        if (courseStartTime == null) return false;
-
-        // 4. 计算提醒时间窗口
-        LocalDateTime reminderTarget = courseStartTime.minusMinutes(reminderAdvanceMinutes);
-        long diffSeconds = Duration.between(now, reminderTarget).abs().getSeconds();
-
-        if (diffSeconds > reminderToleranceSeconds) return false;
-
-        // 5. 检查是否已发送过（同一天同一门课不重复）
-        String cacheKey = course.getUserId() + ":" + course.getId() + ":"
-                + courseStartTime;
-        if (notifiedCache.putIfAbsent(cacheKey, Boolean.TRUE) != null) return false;
-
-        // 6. 发送提醒
-        if (sendReminder(course, courseStartTime, currentWeek)) return true;
-        notifiedCache.remove(cacheKey);
-        return false;
-    }
-
-    /**
-     * 发送课前站内提醒
-     */
-    private boolean sendReminder(CourseEntity course, LocalDateTime courseStartTime, int currentWeek) {
-        String timeStr = courseStartTime.format(DateTimeFormatter.ofPattern("HH:mm"));
-        String message = buildReminderMessage(course, timeStr, currentWeek);
-
+        String message = buildDigestMessage(schedule.courses(), schedule.week(), date);
         try {
-            notificationSink.publish(course.getUserId(), "COURSE_REMINDER", "课前提醒",
-                    message, 5, null);
-            log.info("课前提醒已发送 | userId={} | course={} | time={}",
-                    course.getUserId(), course.getCourseName(), timeStr);
+            notificationSink.publish(userId, "COURSE_DAILY", "今日课表", message, 5, null);
+            log.info("每日课表提醒已发送 | userId={} | courseCount={}", userId, schedule.courses().size());
             return true;
         } catch (Exception e) {
-            log.error("课前提醒发送失败 | userId={} | course={}",
-                    course.getUserId(), course.getCourseName(), e);
+            log.error("每日课表提醒发送失败 | userId={}", userId, e);
             return false;
         }
     }
 
     /**
-     * 构建提醒消息文本
+     * 构建当日课表汇总消息
      */
-    private String buildReminderMessage(CourseEntity course, String timeStr, int currentWeek) {
+    private String buildDigestMessage(List<CourseEntity> courses, int currentWeek, LocalDate date) {
         StringBuilder sb = new StringBuilder();
-        sb.append("⏰ **课前提醒**\n");
+        sb.append("📅 **今日课表**\n");
+        sb.append(date.format(DateTimeFormatter.ofPattern("M月d日 EEEE")))
+          .append(" · 第").append(currentWeek).append("周\n");
         sb.append("────────────────\n\n");
-        sb.append("📖 ").append(course.getCourseName()).append("\n");
-        sb.append("🕐 ").append(timeStr).append("  (").append(course.getPeriodDisplay()).append("节)\n");
-        if (!course.getClassroom().isBlank()) {
-            sb.append("🏫 ").append(course.getClassroom()).append("\n");
-        }
-        if (!course.getTeacher().isBlank()) {
-            sb.append("👨‍🏫 ").append(course.getTeacher()).append("\n");
-        }
-        sb.append("\n📆 第").append(currentWeek).append("周");
-        if (!CourseEntity.WEEK_ALL.equals(course.getWeekType())) {
-            sb.append(" (").append(
-                CourseEntity.WEEK_ODD.equals(course.getWeekType()) ? "单周" : "双周"
-            ).append(")");
-        }
-        sb.append("\n────────────────\n");
-        sb.append("💡 别迟到哦！");
-        return sb.toString();
-    }
 
-    /**
-     * 根据课程节次计算今日开始时间（通过用户绑定的学校作息配置）
-     */
-    private LocalDateTime getCourseEntityStartTime(CourseEntity course, LocalDate date) {
-        var startTime = timeResolver.getStartTime(course.getUserId(), course.getStartPeriod());
-        if (startTime == null) return null;
-        return date.atTime(startTime);
+        List<CourseEntity> sorted = courses.stream()
+                .sorted(java.util.Comparator.comparingInt(CourseEntity::getStartPeriod))
+                .toList();
+        for (CourseEntity course : sorted) {
+            String timeRange = timeResolver.formatTimeRange(course.getUserId(),
+                    course.getStartPeriod(), course.getEndPeriod());
+            sb.append("📖 ").append(course.getCourseName());
+            if (timeRange != null && !timeRange.isBlank()) {
+                sb.append("  ").append(timeRange).append(" (").append(course.getPeriodDisplay()).append("节)");
+            }
+            sb.append("\n");
+            if (course.getClassroom() != null && !course.getClassroom().isBlank()) {
+                sb.append("🏫 ").append(course.getClassroom()).append("\n");
+            }
+            if (course.getTeacher() != null && !course.getTeacher().isBlank()) {
+                sb.append("👨‍🏫 ").append(course.getTeacher()).append("\n");
+            }
+            sb.append("\n");
+        }
+        sb.append("────────────────\n");
+        sb.append("共 ").append(sorted.size()).append(" 门课，加油！💡");
+        return sb.toString();
     }
 
     public Map<String, Object> getStatus(String userId) {
         List<CourseEntity> courses = courseRepository.findByUserId(userId);
         boolean calendarConfigured = semesterService.hasSemester(userId) || semesterConfig.getSemesterStart() != null;
-        long resolved = courses.stream()
-                .filter(course -> timeResolver.getStartTime(userId, course.getStartPeriod()) != null).count();
         String status = courses.isEmpty() ? "no_courses"
-                : !calendarConfigured ? "missing_semester" : resolved == 0 ? "missing_timetable"
-                : resolved < courses.size() ? "partially_ready" : "ready";
+                : !calendarConfigured ? "missing_semester" : "ready";
         String message = switch (status) {
             case "no_courses" -> "尚无课程，请先导入课表";
             case "missing_semester" -> "尚未设置学期起始日期，无法判断实际教学周";
-            case "missing_timetable" -> "作息配置中没有对应课程节次，请先补全作息配置";
-            case "partially_ready" -> "部分课程节次缺少作息配置，只有已匹配时间的课程可提醒";
-            default -> "已满足课前提醒条件，系统每分钟读取最新课表，在上课前 " + reminderAdvanceMinutes + " 分钟发送站内通知";
+            default -> "系统每天 " + reminderTime + " 推送当日课表汇总，当天无课不推送";
         };
         return Map.of("status", status, "calendar_configured", calendarConfigured,
-                "advance_minutes", reminderAdvanceMinutes, "course_count", courses.size(),
-                "resolved_course_count", resolved, "message", message);
+                "reminder_time", reminderTime, "course_count", courses.size(),
+                "message", message);
     }
 
     /**
@@ -248,7 +209,16 @@ public class ScheduleReminderService {
     private void cleanCacheIfNeeded() {
         if (notifiedCache.size() > 10000) {
             notifiedCache.clear();
-            log.info("课前提醒缓存已清理");
+            log.info("每日课表提醒缓存已清理");
+        }
+    }
+
+    private LocalTime parseReminderTime() {
+        try {
+            return LocalTime.parse(reminderTime, TIME_FORMATTER);
+        } catch (Exception e) {
+            log.warn("提醒时间配置非法（{}），回退默认 07:30", reminderTime);
+            return LocalTime.of(7, 30);
         }
     }
 }

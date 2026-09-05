@@ -30,9 +30,9 @@ import org.springframework.stereotype.Component;
  *   <li>用户取消 → 调用 {@code cancel} → 丢弃</li>
  * </ol>
  *
- * <p>16 个 action 按职责委托到三个 feature 层协作类（批次 4 拆分）：
- * 导入流程 {@link CourseImportFlowActions}、查询/管理 {@link CourseQueryActions}、
- * 学校操作 {@link CourseSchoolActions}。本类保留工具契约（名称/描述/schema/分发）。
+ * <p>action 按职责委托到 feature 层协作类（批次 4 拆分）：
+ * 导入流程 {@link CourseImportFlowActions}、查询/管理 {@link CourseQueryActions}。
+ * 本类保留工具契约（名称/描述/schema/分发）。
  */
 @Component
 public class CourseImportTool extends AbstractTool {
@@ -63,7 +63,7 @@ public class CourseImportTool extends AbstractTool {
                 + "- 导入：使用 import -> parse -> confirm 三步流程导入课表（图片/PDF/Excel/直接JSON）\n"
                 + "- 查询：query_today（今日课程），query_date（具体日期，需date=yyyy-MM-dd，按目标学期、教学周和单双周过滤）\n"
                 + "         query_weekday（本周指定星期，如\"周一\"->day_of_week=1）；明天/下周须用query_date\n"
-                + "         query_reminder_status（查询课前提醒真实状态及缺失配置）\n"
+                + "         query_reminder_status（查询每日课表提醒状态，每天固定时间推送当日课表）\n"
                 + "         query_all（全部课程列表）\n"
                 + "         query_free_time（今日空闲时间段）\n"
                 + "- 管理：delete（单条删除，需course_id）、update（按course_id修改一条记录，返回前后对比和提醒状态）、clear（清空全部）\n"

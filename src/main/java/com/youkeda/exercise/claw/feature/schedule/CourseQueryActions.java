@@ -17,8 +17,7 @@ import java.util.Objects;
  *
  * <p>从 {@code CourseImportTool} 拆出的查询/管理分组委托类（批次 4）：
  * query_today / query_free_time / query_all / query_weekday（查询），
- * delete / update / clear（单课管理）。导入流程见 {@code CourseImportFlowActions}，
- * 学校操作见 {@code CourseSchoolActions}。
+ * delete / update / clear（单课管理）。导入流程见 {@code CourseImportFlowActions}。
  */
 @Component
 public class CourseQueryActions {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import BrandMark from '../components/BrandMark';
 import Markdown from '../components/Markdown';
 import RightRail from '../components/RightRail';
@@ -73,6 +73,15 @@ export default function ChatPage({ onHome, user, onLogout }: {
   const [pending, setPending] = useState<PendingToolInfo | null>(null);
   const [pendingBusy, setPendingBusy] = useState(false);
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
+
+  const workspaceArtifacts = useMemo(() => {
+    const byId = new Map<string, Artifact>();
+    for (const message of messages) {
+      if (message.role !== 'assistant') continue;
+      for (const artifact of message.artifacts ?? []) byId.set(artifact.id, artifact);
+    }
+    return Array.from(byId.values()).reverse();
+  }, [messages]);
 
   const abortRef = useRef<AbortController | null>(null);
   const streamIdRef = useRef<string | null>(null);
@@ -982,7 +991,7 @@ export default function ChatPage({ onHome, user, onLogout }: {
               onClick={() => setWorkspaceOpen(false)}
             />
             <div className="fixed inset-y-0 right-0 z-40 w-[85vw] max-w-[400px] shadow-[-8px_0_30px_-18px_rgba(20,21,23,.25)] lg:static lg:z-auto lg:w-[400px] lg:max-w-none lg:shrink-0 lg:shadow-none">
-              <WorkspaceCanvas />
+              <WorkspaceCanvas artifacts={workspaceArtifacts} />
             </div>
           </>
         )}

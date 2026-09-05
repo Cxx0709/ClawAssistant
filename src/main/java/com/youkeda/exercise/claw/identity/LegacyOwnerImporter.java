@@ -30,13 +30,11 @@ public class LegacyOwnerImporter {
                 if (!result.next()) return null;
             }
             try (var query = connection.prepareStatement("""
-                    SELECT user_id, school_id FROM wechat_users
+                    SELECT user_id FROM wechat_users
                     ORDER BY first_active_time ASC, rowid ASC LIMIT 1
                     """); var result = query.executeQuery()) {
                 if (!result.next()) return null;
-                Object schoolValue = result.getObject("school_id");
-                Long schoolId = schoolValue instanceof Number number ? number.longValue() : null;
-                return new LegacyOwner(result.getString("user_id"), schoolId);
+                return new LegacyOwner(result.getString("user_id"));
             }
         } catch (Exception e) {
             log.warn("旧用户数据读取失败，将创建全新 Web 用户 | path={} | error={}",
@@ -45,5 +43,5 @@ public class LegacyOwnerImporter {
         }
     }
 
-    public record LegacyOwner(String userId, Long schoolId) {}
+    public record LegacyOwner(String userId) {}
 }

@@ -65,9 +65,6 @@ public class AuthController {
         AppUser user = users.create(userId, request.username().trim(),
                 passwordEncoder.encode(request.password()), request.displayName().trim());
         profiles.ensureProfile(user.id());
-        if (legacy != null && legacy.schoolId() != null) {
-            profiles.setSchoolId(user.id(), legacy.schoolId());
-        }
         return Map.of("status", "SUCCESS", "legacyDataClaimed", legacy != null,
                 "username", user.username());
     }

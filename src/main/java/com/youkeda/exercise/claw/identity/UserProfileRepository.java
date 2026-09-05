@@ -6,7 +6,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
-/** Channel-neutral user preferences and school binding. */
+/** Channel-neutral user preferences. */
 @Repository
 public class UserProfileRepository {
 
@@ -21,7 +21,6 @@ public class UserProfileRepository {
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS user_profile (
                     user_id                     TEXT PRIMARY KEY,
-                    school_id                   INTEGER,
                     notifications_enabled       INTEGER NOT NULL DEFAULT 1,
                     email                       TEXT,
                     email_notifications_enabled INTEGER NOT NULL DEFAULT 1,
@@ -52,19 +51,6 @@ public class UserProfileRepository {
                     (user_id, notifications_enabled, email_notifications_enabled, created_at, updated_at)
                 VALUES (?, 1, 1, ?, ?)
                 """, userId, now, now);
-    }
-
-    public Long getSchoolId(String userId) {
-        List<Long> values = jdbc.query(
-                "SELECT school_id FROM user_profile WHERE user_id = ? AND school_id IS NOT NULL",
-                (rs, rowNum) -> rs.getLong(1), userId);
-        return values.stream().findFirst().orElse(null);
-    }
-
-    public void setSchoolId(String userId, Long schoolId) {
-        ensureProfile(userId);
-        jdbc.update("UPDATE user_profile SET school_id = ?, updated_at = ? WHERE user_id = ?",
-                schoolId, System.currentTimeMillis(), userId);
     }
 
     public boolean notificationsEnabled(String userId) {

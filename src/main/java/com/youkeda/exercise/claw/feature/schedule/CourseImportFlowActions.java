@@ -15,8 +15,7 @@ import java.util.List;
  * 课表导入流程操作（import → parse → confirm/cancel，含学期确认）。
  *
  * <p>从 {@code CourseImportTool} 拆出的导入分组委托类（批次 4）。
- * 仅处理与导入状态机相关的 action；查询/管理/学校操作见
- * {@code CourseQueryActions} / {@code CourseSchoolActions}。
+ * 仅处理与导入状态机相关的 action；查询/管理见 {@code CourseQueryActions}。
  */
 @Component
 public class CourseImportFlowActions {

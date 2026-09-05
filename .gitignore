@@ -103,4 +103,6 @@ src/main/resources/application-local.properties
 logs/
 *.db
 
+.workbuddy
+
 周报-2026-08-02至08-09.md

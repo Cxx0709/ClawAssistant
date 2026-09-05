@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import ArtifactCard from './ArtifactCard';
+import type { Artifact } from '../lib/types';
 
 type TabKey = 'images' | 'files';
 
@@ -7,8 +9,11 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: 'files', label: '文件', icon: '📁' },
 ];
 
-export default function WorkspaceCanvas() {
+export default function WorkspaceCanvas({ artifacts }: { artifacts: Artifact[] }) {
   const [activeTab, setActiveTab] = useState<TabKey>('images');
+  const visibleArtifacts = artifacts.filter((artifact) =>
+    activeTab === 'images' ? artifact.kind === 'IMAGE' : artifact.kind !== 'IMAGE',
+  );
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-canvas)]">
@@ -41,7 +46,13 @@ export default function WorkspaceCanvas() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
-        {activeTab === 'images' ? (
+        {visibleArtifacts.length > 0 ? (
+          <div className={activeTab === 'images' ? 'grid gap-3 sm:grid-cols-2 lg:grid-cols-1' : 'flex flex-col gap-3'}>
+            {visibleArtifacts.map((artifact) => (
+              <ArtifactCard key={artifact.id} artifact={artifact} />
+            ))}
+          </div>
+        ) : activeTab === 'images' ? (
           <EmptyState icon="🎨" text="生成的图片会显示在这里" />
         ) : (
           <EmptyState icon="📁" text="相关的文件会显示在这里" />

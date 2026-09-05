@@ -111,6 +111,14 @@ spring.datasource.driver-class-name=org.sqlite.JDBC
 # ============================================
 campus.enabled=true
 
+# ============================================
+# Daily Schedule Reminder（每日课表提醒）
+# ============================================
+# 每天固定时间（HH:mm）向有课用户推送当日课表汇总
+schedule.daily-reminder.time=07:30
+# 错过提醒时间后的补发宽限期（分钟），应用停机重启后仍在宽限期内则补发
+schedule.daily-reminder.grace-minutes=120
+
 storage.enabled=true
 
 # ============================================
