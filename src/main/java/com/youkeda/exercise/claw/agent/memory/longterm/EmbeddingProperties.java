@@ -32,7 +32,7 @@ public class EmbeddingProperties {
 
     public static class Circuit {
         private int failureThreshold = 3;
-        private Duration openDuration = Duration.ofSeconds(30);
+        private Duration openDuration = Duration.ofSeconds(10);
 
         public int getFailureThreshold() { return failureThreshold; }
         public void setFailureThreshold(int failureThreshold) { this.failureThreshold = failureThreshold; }

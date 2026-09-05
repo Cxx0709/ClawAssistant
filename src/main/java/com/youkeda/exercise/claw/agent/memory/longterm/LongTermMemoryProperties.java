@@ -39,7 +39,7 @@ public class LongTermMemoryProperties {
     private float dedupSimilarity = 0.90f;
 
     /** 用户消息最短长度：低于此值跳过记忆提取 */
-    private int minExtractLength = 10;
+    private int minExtractLength = 4;
 
     /** 记忆容量上限：超限时按质量分淘汰最弱 */
     private int maxMemories = 500;

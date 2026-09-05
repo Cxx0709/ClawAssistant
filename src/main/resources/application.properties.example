@@ -135,7 +135,7 @@ memory.async-queue-capacity=50
 # 去重相似度阈值：高于此值视为重复
 memory.dedup-similarity=0.90
 # 用户消息最短长度：低于此值跳过提取
-memory.min-extract-length=10
+memory.min-extract-length=4
 
 # Qdrant 向量数据库
 memory.qdrant.host=localhost
@@ -151,7 +151,7 @@ memory.embedding.model=bge-m3
 memory.embedding.dimension=1024
 memory.embedding.request-timeout=30s
 memory.embedding.circuit.failure-threshold=3
-memory.embedding.circuit.open-duration=30s
+memory.embedding.circuit.open-duration=10s
 
 # Skill RAG（知识内容和索引元数据不得包含凭据）
 skill.knowledge.collection=skill_knowledge
