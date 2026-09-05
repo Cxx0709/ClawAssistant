@@ -1,5 +1,4 @@
 import { fmtDuration, toolActionLabel } from '../lib/format';
-import { toolStateLabel } from '../lib/execution';
 import type { ToolItem } from '../lib/types';
 
 interface ToolTraceProps {
@@ -42,6 +41,19 @@ function CrossIcon() {
   );
 }
 
+/** 等待人工确认：黄色沙漏图标 */
+function WaitConfirmIcon() {
+  return (
+    <span className="trace-icon bg-[#fdf3d8] text-[#b47a1f]">
+      <svg viewBox="0 0 24 24" className="h-[11px] w-[11px]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 2h12M6 22h12" />
+        <path d="M6 2v4a6 6 0 0 0 12 0V2" />
+        <path d="M18 22v-4a6 6 0 0 0-12 0v4" />
+      </svg>
+    </span>
+  );
+}
+
 function StackIcon({ className }: { className?: string }) {
   return (
     <span className={`${className ?? ''} text-ink-faint`}>
@@ -72,23 +84,25 @@ function ToolRow({ tool, running }: { tool: ToolItem; running: boolean }) {
         <span className="trace-icon text-brand"><SpinnerIcon /></span>
       ) : tool.state === 'ok' ? (
         <CheckIcon />
-      ) : tool.state === 'err' ? (
-        <CrossIcon />
+      ) : tool.state === 'WAIT_CONFIRM' ? (
+        <WaitConfirmIcon />
       ) : (
-        <span aria-hidden="true" className="trace-icon text-ink-faint">−</span>
+        <CrossIcon />
       )}
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-baseline gap-x-2">
           <span className="break-words text-[12.5px] font-medium text-ink">{name}</span>
           <span className="truncate font-mono text-[11px] text-ink-faint">{tool.skill}</span>
         </span>
+        {tool.state === 'WAIT_CONFIRM' && (
+          <span className="mt-0.5 block text-xs leading-snug text-[#b47a1f]">等待人工确认</span>
+        )}
         {tool.state === 'err' && (
           <span className="mt-0.5 block break-words text-xs leading-snug text-red-700">{tool.detail || '工具未返回具体原因，请稍后重试。'}</span>
         )}
       </span>
       <span className="ml-auto pl-3 font-mono text-[11px] tabular-nums text-ink-faint">
-        {toolStateLabel(tool, running)}
-        {tool.durationMs != null && <span className="mt-1 block">{fmtDuration(tool.durationMs)}</span>}
+        {tool.state === 'running' ? '运行中…' : tool.state === 'WAIT_CONFIRM' ? '待确认' : fmtDuration(tool.durationMs)}
       </span>
     </div>
   );
@@ -104,6 +118,7 @@ export default function ToolTrace({ tools, running, open, totalMs, onToggle }: T
   const skills = [...new Set(tools.map((tool) => tool.skill).filter((skill) => skill && skill !== 'common'))];
 
   const expanded = open || running;
+  // 只统计真正的失败（ERR），WAIT_CONFIRM 不计入失败
   const errCount = tools.filter((t) => t.state === 'err').length;
 
   // 收起态：摘要一行

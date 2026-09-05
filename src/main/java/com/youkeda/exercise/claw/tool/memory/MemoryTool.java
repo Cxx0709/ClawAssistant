@@ -19,10 +19,10 @@ import java.util.List;
  * 记忆管理工具（LLM Function Calling）
  *
  * 让用户通过自然语言管理长期记忆：
- * - "记住我喜欢吃辣" → save
- * - "你记住了我的什么" → list
- * - "删除关于生日的记忆" → delete
- * - "我之前让你记住的偏好有哪些" → recall（按分类查询）
+ * - "记住我喜欢吃辣" -> save
+ * - "你记住了我的什么" -> list
+ * - "删除关于生日的记忆" -> delete
+ * - "我之前让你记住的偏好有哪些" -> recall（按分类查询）
  */
 @Component
 public class MemoryTool extends AbstractTool {
@@ -45,11 +45,11 @@ public class MemoryTool extends AbstractTool {
 
     @Override
     public String getDescription() {
-        return "管理用户的长期记忆。支持四种操作：\n" +
-                "1. save — 保存一条记忆。当用户说\"记住XX\"、\"帮我记一下XX\"时调用\n" +
-                "2. list — 列出用户的全部记忆。当用户问\"你记住了什么\"、\"我的记忆有哪些\"时调用\n" +
-                "3. recall — 按分类查询记忆。当用户问\"我的偏好有哪些\"、\"我的规则是什么\"时调用\n" +
-                "4. delete — 删除一条记忆。当用户说\"忘掉XX\"、\"删除关于XX的记忆\"时调用";
+        return "管理用户的长期记忆。支持四种操作：\n"
+                + "1. save - 保存一条记忆。当用户说记住XX、帮我记一下XX、记一下XX时必须调用此工具。【强约束】绝不能只口头说记住了而不调用，必须实际调用save操作写入系统\n"
+                + "2. list - 列出用户的全部记忆。当用户问你记住了什么、我的记忆有哪些时调用\n"
+                + "3. recall - 按分类查询记忆。当用户问我的偏好有哪些、我的规则是什么时调用\n"
+                + "4. delete - 删除一条记忆。当用户说忘掉XX、删除关于XX的记忆时调用";
     }
 
     @Override
@@ -163,7 +163,7 @@ public class MemoryTool extends AbstractTool {
             ObjectNode result = objectMapper.createObjectNode();
             result.put("action", "delete");
             result.put("success", false);
-            result.put("message", "未找到与\"" + content + "\"匹配的记忆");
+            result.put("message", "未找到与" + content + "匹配的记忆");
             return result.toString();
         }
 

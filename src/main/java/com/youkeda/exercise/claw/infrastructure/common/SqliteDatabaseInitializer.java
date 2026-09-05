@@ -283,26 +283,6 @@ public class SqliteDatabaseInitializer {
             )
         """);
 
-        // 创建校园通知表
-        jdbcTemplate.execute("""
-            CREATE TABLE IF NOT EXISTS campus_notice (
-                id                INTEGER PRIMARY KEY AUTOINCREMENT,
-                title             TEXT NOT NULL,
-                url               TEXT NOT NULL UNIQUE,
-                publish_at        TEXT,
-                content           TEXT DEFAULT '',
-                type              TEXT DEFAULT 'UNKNOWN',
-                confidence        REAL DEFAULT 0,
-                score_source      TEXT DEFAULT 'NONE',
-                classifier_reason TEXT DEFAULT '',
-                status            TEXT DEFAULT 'UNPROCESSED',
-                processed_at      INTEGER,
-                created_at        INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
-            )
-        """);
-        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_notice_url ON campus_notice(url)");
-        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_notice_status ON campus_notice(status)");
-
         // 创建待确认通知表
         jdbcTemplate.execute("""
             CREATE TABLE IF NOT EXISTS campus_pending_ask (
@@ -331,20 +311,6 @@ public class SqliteDatabaseInitializer {
                 inactivity_count INTEGER NOT NULL DEFAULT 0
             )
         """);
-
-        // === 校园通知框架迁移：为 campus_notice 添加 source 列 ===
-        try {
-            jdbcTemplate.execute("ALTER TABLE campus_notice ADD COLUMN source TEXT NOT NULL DEFAULT 'EXAM'");
-            log.info("DB迁移完成：campus_notice 添加 source 列");
-        } catch (Exception e) {
-            log.debug("campus_notice.source 列已存在，跳过迁移");
-        }
-
-        try {
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_notice_source ON campus_notice(source)");
-        } catch (Exception e) {
-            log.debug("idx_notice_source 索引已存在，跳过");
-        }
 
         // === 迁移：为 campus_pending_ask 添加 source 列（默认 'EXAM' 兼容旧数据） ===
         try {

@@ -7,6 +7,7 @@ public enum ActivityEventType {
     TOOL_SUCCEEDED,
     TOOL_FAILED,
     TOOL_BLOCKED,
+    TOOL_TRACE,
     RESPONSE_COMPLETED,
     REQUEST_FAILED
 }

@@ -5,6 +5,7 @@ import type {
   GoalItem,
   MemoryItem,
   NotificationItem,
+  PendingToolInfo,
   SystemStatus,
   Conversation,
   HistoryMessage,
@@ -232,6 +233,73 @@ export async function fetchNotifications(): Promise<NotificationItem[]> {
 
 export async function markNotificationRead(id: number): Promise<void> {
   await apiFetch(`/api/notifications/${id}/read`, { method: 'POST' });
+}
+
+// ===== 待确认的高风险工具（Phase 5 前端确认） =====
+
+export interface PendingToolResponse {
+  pending: PendingToolInfo | null;
+}
+
+export interface PendingActResponse {
+  status: string;
+  reply: string;
+  rawResult?: string;
+  /** trace id linking to the WAIT_CONFIRM tool trace, for in-place update */
+  traceId?: string;
+  /** target trace state after confirm/cancel: confirm -> ok, cancel -> err */
+  traceState?: 'ok' | 'err';
+}
+
+export async function fetchPendingTool(): Promise<PendingToolResponse> {
+  return getJson<PendingToolResponse>('/api/tools/pending').catch(() => ({ pending: null }));
+}
+
+export async function confirmPendingTool(): Promise<PendingActResponse> {
+  const res = await apiFetch('/api/tools/pending/confirm', { method: 'POST' });
+  if (!res.ok) throw new Error((await readError(res)) || '确认失败，请稍后再试');
+  return (await res.json()) as PendingActResponse;
+}
+
+export async function cancelPendingTool(): Promise<PendingActResponse> {
+  const res = await apiFetch('/api/tools/pending/cancel', { method: 'POST' });
+  if (!res.ok) throw new Error((await readError(res)) || '取消失败，请稍后再试');
+  return (await res.json()) as PendingActResponse;
+}
+
+// ============ 用户资料（邮箱提醒设置） ============
+
+export interface UserProfileResponse {
+  email: string;
+  emailNotificationsEnabled: boolean;
+  notificationsEnabled: boolean;
+}
+
+export async function fetchUserProfile(): Promise<UserProfileResponse> {
+  return getJson<UserProfileResponse>('/api/profile');
+}
+
+export async function setUserEmail(email: string): Promise<{ success: boolean; email?: string; error?: string }> {
+  const res = await apiFetch('/api/profile/email', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  return await res.json();
+}
+
+export async function clearUserEmail(): Promise<{ success: boolean }> {
+  const res = await apiFetch('/api/profile/email', { method: 'DELETE' });
+  return await res.json();
+}
+
+export async function setEmailNotificationsEnabled(enabled: boolean): Promise<{ success: boolean; emailNotificationsEnabled?: boolean }> {
+  const res = await apiFetch('/api/profile/email-notifications', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+  return await res.json();
 }
 
 async function readError(res: Response): Promise<string> {

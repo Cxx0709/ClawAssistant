@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.Locale;
+import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Resolves a stable topic key for manually saved memories. */
 @Component

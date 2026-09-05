@@ -174,8 +174,38 @@ public class WebChatStreamService {
                             "durationMs", 0L, "detail", safe(event.summary())));
                     checkpoint(true);
                 }
+                case TOOL_TRACE -> {
+                    // 工具 trace 事件（高风险工具 WAIT_CONFIRM / 确认取消后的 UPDATE）
+                    ToolTraceItem item = event.toolTrace();
+                    if (item != null) {
+                        applyToolTrace(item);
+                        send(Map.of("type", "tool_trace", "item", item));
+                    }
+                    checkpoint(true);
+                }
                 default -> { }
             }
+        }
+
+        /** 将 APPEND / UPDATE 的 trace 应用到本地 tools 列表，供 checkpoint 落库。 */
+        private void applyToolTrace(ToolTraceItem item) {
+            if ("UPDATE".equals(item.eventType())) {
+                for (int i = 0; i < tools.size(); i++) {
+                    ToolTraceItem existing = tools.get(i);
+                    if (item.traceId() != null && item.traceId().equals(existing.traceId())) {
+                        tools.set(i, new ToolTraceItem(
+                                existing.id(), existing.name(), existing.skill(),
+                                item.state(), item.durationMs(), item.detail(),
+                                existing.traceId(), existing.confirmPayload(), item.eventType()));
+                        return;
+                    }
+                }
+                return;
+            }
+            // APPEND：分配本地显示 id
+            String displayId = item.id() != null ? item.id() : "t" + (++toolSequence);
+            tools.add(new ToolTraceItem(displayId, item.name(), item.skill(), item.state(),
+                    item.durationMs(), item.detail(), item.traceId(), item.confirmPayload(), item.eventType()));
         }
 
         private void onContentDelta(String delta) {

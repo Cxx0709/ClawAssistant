@@ -5,13 +5,23 @@ export type StreamEvent =
   | { type: 'skill'; name: string }
   | { type: 'tool_start'; name: string; skill?: string }
   | { type: 'tool_end'; name: string; skill?: string; ok: boolean; durationMs?: number; detail?: string }
+  | { type: 'tool_trace'; item: ToolItem }
   | { type: 'text'; content: string }
   | { type: 'done'; reply: string; silent?: boolean; artifacts?: Artifact[] }
   | { type: 'error'; message: string };
 
 // ===== 对话模型 =====
 
-export type ToolState = 'running' | 'ok' | 'err';
+export interface PendingToolInfo {
+  id: string;
+  toolName: string;
+  displayName: string;
+  argsPreview?: string;
+  expireAt?: string;
+  traceId?: string;
+}
+
+export type ToolState = 'running' | 'ok' | 'err' | 'WAIT_CONFIRM';
 
 export interface ToolItem {
   id: string;
@@ -20,6 +30,9 @@ export interface ToolItem {
   state: ToolState;
   durationMs?: number;
   detail?: string;
+  traceId?: string;
+  confirmPayload?: string;
+  eventType?: 'APPEND' | 'UPDATE';
 }
 
 export interface ChatMsg {
@@ -76,12 +89,28 @@ export interface MessagePage { items: HistoryMessage[]; nextCursor?: string | nu
 
 export interface Artifact {
   id: string;
-  kind: 'IMAGE' | 'AUDIO' | 'FILE';
+  kind: 'BOARD' | 'IMAGE' | 'AUDIO' | 'FILE';
   mimeType: string;
   fileName: string;
   size: number;
   description?: string;
   url: string;
+  /** BOARD 类型的结构化数据 */
+  boardData?: BoardView;
+}
+
+export interface BoardView {
+  title: string;            // 「杭州两日行程」
+  stats: string;            // 「步行 12.4 km · 用餐 3 顿 · 预算约 ¥860」
+  days: {
+    label: string;
+    items: {
+      title: string;
+      time: string;
+      status: 'done' | 'adjusted' | 'added';
+      note?: string;
+    }[];
+  }[];
 }
 
 // ===== 右侧信息栏数据（/api/webchat/*） =====

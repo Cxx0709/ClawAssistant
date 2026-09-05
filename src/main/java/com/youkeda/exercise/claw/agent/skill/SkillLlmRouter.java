@@ -36,7 +36,7 @@ public class SkillLlmRouter {
                 return t;
             },
             new ThreadPoolExecutor.CallerRunsPolicy());
-    private final Duration timeout = Duration.ofSeconds(5);
+    private final Duration timeout = Duration.ofSeconds(15);
 
     @PreDestroy
     public void shutdown() {

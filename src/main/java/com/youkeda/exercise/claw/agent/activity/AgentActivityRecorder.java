@@ -1,5 +1,6 @@
 package com.youkeda.exercise.claw.agent.activity;
 
+import com.youkeda.exercise.claw.web.conversation.ToolTraceItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -85,6 +86,19 @@ public class AgentActivityRecorder {
         record(new AgentActivityEvent(
                 requestId, ActivityEventType.TOOL_BLOCKED,
                 skillName, toolName, "BLOCKED", safeReason(reason), null));
+    }
+
+    /**
+     * 发布一条工具 trace 事件（APPEND / UPDATE），通过 SSE 推送给前端。
+     *
+     * <p>用于高风险工具拦截后的 WAIT_CONFIRM 状态，以及确认/取消后的原地状态更新。
+     */
+    public void publishToolTrace(String requestId, ToolTraceItem item) {
+        record(new AgentActivityEvent(
+                requestId, ActivityEventType.TOOL_TRACE,
+                item.skill(), item.name(), item.state(),
+                item.detail() == null ? "tool_trace" : item.detail(),
+                item.durationMs(), item));
     }
 
     public void requestCompleted(String requestId, long durationMs) {
