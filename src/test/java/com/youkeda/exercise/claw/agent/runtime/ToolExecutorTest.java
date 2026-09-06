@@ -105,6 +105,24 @@ class ToolExecutorTest {
         verify(planStore, never()).save(any());
     }
 
+    @Test
+    void legacyMapToolNamesShouldResolveToMapSearchPlace() {
+        stubTool("map_search_place");
+
+        LLMResponse.ToolCall call = new LLMResponse.ToolCall(
+                "call-map", "map_poi_search",
+                "{\"location\":\"杭州\",\"keyword\":\"景点\",\"category\":\"景点\"}");
+        SkillSession session = SkillSession.create("owner");
+
+        ToolExecutor.ToolExecutionBatch batch = executor.executeToolCalls(
+                List.of(call),
+                new ToolExecutionContext("推荐杭州景点", session, "owner"),
+                session, null, "req-1", "common", "推荐杭州景点", new HashSet<>());
+
+        assertEquals(1, batch.toolCallCount());
+        verify(registry).find("map_search_place");
+    }
+
     private void stubTool(String name) {
         Tool tool = mock(Tool.class);
         when(tool.getName()).thenReturn(name);

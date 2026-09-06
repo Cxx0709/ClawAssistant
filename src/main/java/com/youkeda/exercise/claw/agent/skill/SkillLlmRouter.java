@@ -109,7 +109,7 @@ public class SkillLlmRouter {
                 future.cancel(true);
             }
             log.warn("LLM Router timeout after {}ms for message: {}", timeout.toMillis(), message);
-            return SkillRoutingResult.fallback();
+            return timeoutFallback(message, session);
         } catch (RejectedExecutionException e) {
             log.warn("LLM Router executor rejected task, fallback | message={}", message);
             return SkillRoutingResult.fallback();
@@ -117,6 +117,22 @@ public class SkillLlmRouter {
             log.error("LLM Router failed for message: {}", message, e);
             return SkillRoutingResult.fallback();
         }
+    }
+
+    private SkillRoutingResult timeoutFallback(String message, Optional<SkillSession> session) {
+        if (session.isPresent() && !"common".equals(session.get().activeSkill())
+                && isLikelyContinuation(message, session.get().activeSkill())) {
+            String skill = session.get().activeSkill();
+            return SkillRoutingResult.of(skill, Set.of(),
+                    SkillRoutingResult.SkillRoutingAction.CONTINUE, 0.8,
+                    "LLM router timeout; retained active skill");
+        }
+        return SkillRoutingResult.fallback();
+    }
+
+    private boolean isLikelyContinuation(String message, String skill) {
+        return "anime".equals(skill)
+                && message.matches("(?s).*(动漫|番剧|新番|追番|追更|这部番|更新时间|什么时候更新|何时更新|播出|第几集|几时).*" );
     }
 
     private String routingHistory(List<Message> history, String currentMessage) {

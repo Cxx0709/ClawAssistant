@@ -28,6 +28,9 @@ public class VisionProperties {
      */
     private String model = "qwen-vl-max";
 
+    /** 请求超时时间（秒） */
+    private int timeoutSeconds = 180;
+
     public String getApiKey() {
         return apiKey;
     }
@@ -50,5 +53,13 @@ public class VisionProperties {
 
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public int getTimeoutSeconds() {
+        return timeoutSeconds;
+    }
+
+    public void setTimeoutSeconds(int timeoutSeconds) {
+        this.timeoutSeconds = timeoutSeconds;
     }
 }

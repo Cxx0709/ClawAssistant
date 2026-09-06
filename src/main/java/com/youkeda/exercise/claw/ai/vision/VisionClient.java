@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpTimeoutException;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
@@ -28,7 +29,6 @@ public class VisionClient {
 
     private static final Logger log = LoggerFactory.getLogger(VisionClient.class);
 
-    private static final int TIMEOUT_SECONDS = 60;
     private static final String SYSTEM_PROMPT_PATH = "prompts/vision-system-prompt.txt";
     private static final String DEFAULT_SYSTEM_PROMPT = "你是 Claw助手的视觉理解模块，请客观描述图片中的内容。";
 
@@ -44,7 +44,7 @@ public class VisionClient {
         this.objectMapper = objectMapper;
         this.promptLoader = promptLoader;
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                .connectTimeout(Duration.ofSeconds(properties.getTimeoutSeconds()))
                 .build();
     }
 
@@ -80,15 +80,31 @@ public class VisionClient {
             String url = properties.getBaseUrl() + "/chat/completions";
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
-                    .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                    .timeout(Duration.ofSeconds(properties.getTimeoutSeconds()))
                     .header("Authorization", "Bearer " + properties.getApiKey())
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                     .build();
 
-            HttpResponse<String> response = httpClient.send(request,
-                    HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = null;
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                try {
+                    response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                    break;
+                } catch (HttpTimeoutException e) {
+                    if (attempt == 2) throw e;
+                    log.warn("视觉模型请求超时，准备重试 | attempt=1/2 | timeoutSeconds={}",
+                            properties.getTimeoutSeconds());
+                }
+            }
 
+            log.info("视觉模型响应 | status={} | bodyLen={}", response.statusCode(), response.body().length());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                String body = response.body();
+                log.warn("视觉模型返回非成功状态 | status={} | body={}", response.statusCode(),
+                        body.length() > 500 ? body.substring(0, 500) : body);
+                return null;
+            }
             String reply = parseResponse(response.body());
             if (reply != null && !reply.isEmpty()) {
                 log.info("图片分析成功");

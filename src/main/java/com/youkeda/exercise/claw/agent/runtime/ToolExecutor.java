@@ -46,6 +46,11 @@ public class ToolExecutor {
     /** 单次请求允许执行的最大工具数 */
     static final int MAX_TOOL_CALLS = 16;
 
+    /** 兼容部分模型/历史提示词生成的旧地图函数名。 */
+    private static final Map<String, String> TOOL_ALIASES = Map.of(
+            "map_poi_search", "map_search_place",
+            "map_search_nearby", "map_search_place");
+
     private final ToolRegistry toolRegistry;
     private final SafetyPolicy safetyPolicy;
     private final SkillPendingCoordinator skillPendingCoordinator;
@@ -121,9 +126,13 @@ public class ToolExecutor {
         Map<String, ResultStatus> toolStatuses = new LinkedHashMap<>();
 
         for (LLMResponse.ToolCall tc : toolCalls) {
-            String toolName = tc.name();
+            String requestedToolName = tc.name();
+            String toolName = TOOL_ALIASES.getOrDefault(requestedToolName, requestedToolName);
             String owningSkill = skillRegistry.resolveSkillForTool(toolName);
             String toolSkillName = owningSkill == null ? "common" : owningSkill;
+            if (!requestedToolName.equals(toolName)) {
+                log.info("工具别名归一化 | requested={} | canonical={}", requestedToolName, toolName);
+            }
             log.info("工具调用 | name={} | args={} | id={}", toolName, tc.arguments(), tc.id());
 
             Tool fn = toolRegistry.find(toolName);

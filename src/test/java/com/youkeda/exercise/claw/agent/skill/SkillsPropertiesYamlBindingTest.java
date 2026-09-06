@@ -68,6 +68,8 @@ class SkillsPropertiesYamlBindingTest {
                 "image_generate 必须是通用能力工具");
         assertTrue(commonCapTools.contains("text_to_speech"),
                 "text_to_speech 必须是通用能力工具");
+        assertTrue(commonCapTools.contains("map_search_place"),
+                "map_search_place 必须是通用能力工具，否则普通地点推荐无法调用地图");
     }
 
     @Test

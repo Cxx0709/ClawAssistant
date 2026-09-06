@@ -46,9 +46,20 @@ public class AnimeSubscribeTool extends AbstractTool {
     @Override
     public String getDescription() {
         return "管理追番列表。支持搜索番剧、订阅、取消订阅、查看列表、查询播出/更新时间。"
+            + "仅在用户明确要求追番、订阅、取消订阅、查看订阅列表或查询更新时间时调用；单纯推荐新番不要调用。"
             + "当用户已从推荐列表中指定番剧时，优先使用 animeId 参数进行 subscribe 操作。"
             + "当用户问某部番剧'什么时候更新'、'几点播出'、'第几集什么时候出'时，使用 schedule 动作。"
             + "当用户说'帮我追番'、'订阅'、'取消追番'、'我追的番'时调用。";
+    }
+
+    @Override
+    public boolean isAvailable(ToolExecutionContext context) {
+        String message = context == null ? "" : context.currentMessage();
+        if (message == null || message.isBlank()) return true;
+
+        boolean recommendation = message.matches("(?s).*(推荐|好看|这季|新番).*");
+        boolean subscriptionAction = message.matches("(?s).*(订阅|追番|取消追番|已订阅|订阅列表|追番列表|什么时候更新|何时更新|播出时间|几点播出).*");
+        return !recommendation || subscriptionAction;
     }
 
     @Override

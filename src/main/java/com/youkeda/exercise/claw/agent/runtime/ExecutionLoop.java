@@ -237,6 +237,16 @@ public class ExecutionLoop {
             if (!response.isToolCall()) {
                 String reply = response.getContent();
 
+                // 防止模型在工具不可用或工具调用失败后把伪 XML tool call 原样泄漏给用户。
+                if (reply != null && reply.contains("<tool_call>")) {
+                    log.warn("检测到伪工具调用文本，强制无工具重试 | reply={}", reply);
+                    messages.add(new Message("system",
+                            "上一条回复包含未执行的伪工具调用。请不要输出 tool_call 标记，"
+                                    + "直接用普通中文回复用户；如果无法查询，请明确说明。"));
+                    forceTextResponse = true;
+                    continue;
+                }
+
                 if (reply == null || reply.isBlank()) {
                     String structuredFallback = structuredToolFallback(messages);
                     if (structuredFallback != null) {
