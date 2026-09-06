@@ -24913,7 +24913,7 @@ function RolesPage({ onBack }) {
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: label, children: "选择预设音色" }),
               /* @__PURE__ */ jsxRuntimeExports.jsxs("select", { className: input, value: voiceId, onChange: (e) => setVoiceId(e.target.value), children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "longlaoyi_v3", children: "不使用" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "", children: "不使用" }),
                 /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "longanyang", children: "阳光大男孩" }),
                 /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "longanhuan_v3", children: "欢脱元气女" }),
                 /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "longhuhu_v3", children: "天真烂漫女童" }),

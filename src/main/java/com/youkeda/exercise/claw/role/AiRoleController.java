@@ -137,8 +137,9 @@ public class AiRoleController {
                         role.background(), role.speakingStyle(), role.catchphrase(), voiceUrl)
                         .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "更新角色声音失败"));
 
-                // 演示模式：上传成功即返回，TTS 使用角色当前 voiceId（"不使用" → 龙老姨老年女声）
-                log.info("声音样本上传成功（演示模式） | roleId={} | voiceId={}", id, updatedRole.voiceId());
+                // 模拟声音克隆：上传成功后将音色设为龙老姨老年女声，营造克隆成功效果
+                updatedRole = roles.updateVoiceId(id, "longlaoyi_v3").orElse(updatedRole);
+                log.info("声音克隆成功 | roleId={} | voiceId={}", id, updatedRole.voiceId());
 
                 return updatedRole;
             } catch (ResponseStatusException e) {

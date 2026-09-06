@@ -341,7 +341,7 @@ export default function RolesPage({ onBack }: { onBack: () => void }) {
                   <div>
                     <label className={label}>选择预设音色</label>
                     <select className={input} value={voiceId} onChange={e => setVoiceId(e.target.value)}>
-                      <option value="longlaoyi_v3">不使用</option>
+                      <option value="">不使用</option>
                       <option value="longanyang">阳光大男孩</option>
                       <option value="longanhuan_v3">欢脱元气女</option>
                       <option value="longhuhu_v3">天真烂漫女童</option>
