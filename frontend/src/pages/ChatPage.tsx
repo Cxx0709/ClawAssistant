@@ -251,7 +251,7 @@ export default function ChatPage({ onHome, user, onLogout, onGoRoles }: {
         setDeletedConversations(deletedItems);
         const requested = new URLSearchParams(window.location.search).get('conversation');
         if (requested && ![...items, ...archivedItems].some(item => item.id === requested)) {
-          setHistoryError('来源对话不存在或已删除，请从左侧选择其他对话');
+          setConversationId(items[0].id);
         } else {
           setConversationId(requested || items[0].id);
         }
@@ -865,7 +865,7 @@ export default function ChatPage({ onHome, user, onLogout, onGoRoles }: {
         <div className="flex items-center gap-2.5">
           <BrandMark size={28} />
           <div className="hidden leading-tight sm:block">
-            <p className="text-[13.5px] font-semibold">Claw Assistant</p>
+            <p className="text-[13.5px] font-semibold">知行</p>
             <p className="flex items-center gap-1 text-[11px] text-ink-faint">
               <span className={`inline-block h-1.5 w-1.5 rounded-full ${connected ? 'bg-[#34c759]' : 'bg-ink-faint'}`} />
               {connected ? 'Web 助手在线' : '初始化中'}
@@ -1127,7 +1127,7 @@ export default function ChatPage({ onHome, user, onLogout, onGoRoles }: {
                 onRetry={(id) => queue.retry(id)}
               />
               <p className="mt-2 text-center text-[11px] text-ink-faint">
-                Claw 也会犯错，重要信息请以官方渠道为准
+                知行也会犯错，重要信息请以官方渠道为准
               </p>
             </div>
           </div>

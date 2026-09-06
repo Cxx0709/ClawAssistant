@@ -301,6 +301,18 @@ public class TravelPlanService {
         result.put("option_name", selected.getDisplayName());
         if (selected.getCostResult() != null) {
             result.set("cost", selected.getCostResult());
+            String budgetStatus = selected.getCostResult().path("budgetStatus").asText("");
+            if ("OVER_BUDGET".equalsIgnoreCase(budgetStatus)
+                    || "POSSIBLY_OVER_BUDGET".equalsIgnoreCase(budgetStatus)) {
+                result.put("status", "BUDGET_DECISION_REQUIRED");
+                result.put("message", "所选方案超出预算，请先确认是否接受超支或调整方案。"
+                        + "可选：接受超支、调整到预算内、更新预算上限、查看调整选项。");
+                result.putArray("budget_decisions")
+                        .add("ACCEPT_OVERRUN")
+                        .add("REVISE_TO_BUDGET")
+                        .add("UPDATE_BUDGET_LIMIT")
+                        .add("SHOW_ADJUSTMENT_OPTIONS");
+            }
         }
         refreshState(result, draft);
         return result;

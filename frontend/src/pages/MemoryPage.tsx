@@ -123,7 +123,7 @@ export default function MemoryPage({ onBack }: { onBack: () => void }) {
   return <div className="min-h-dvh bg-canvas text-ink">
     <header className="border-b border-line">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-5 py-4 sm:px-8">
-        <div className="flex items-center gap-3"><BrandMark size={30} /><span className="text-sm font-semibold">Claw Assistant <span className="ml-2 font-normal text-ink-faint">/ 我的记忆</span></span></div>
+        <div className="flex items-center gap-3"><BrandMark size={30} /><span className="text-sm font-semibold">知行 <span className="ml-2 font-normal text-ink-faint">/ 我的记忆</span></span></div>
         <button onClick={onBack} disabled={busy} className={button}>← 返回</button>
       </div>
     </header>

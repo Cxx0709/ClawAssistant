@@ -293,7 +293,7 @@ export async function exportConversation(id: string, title: string): Promise<voi
   const url = URL.createObjectURL(await res.blob());
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `${title.replace(/[\\/:*?"<>|]/g, '_') || 'Claw 对话'}.json`;
+  anchor.download = `${title.replace(/[\\/:*?"<>|]/g, '_') || '知行对话'}.json`;
   anchor.click();
   URL.revokeObjectURL(url);
 }

@@ -134,6 +134,7 @@ public class ExecutionLoop {
             Consumer<String> contentSink) {
 
         Set<String> executedCalls = new HashSet<>();
+        Set<String> failedTools = new HashSet<>();
         Map<String, ResultStatus> toolStatuses = new HashMap<>();
         boolean forceTextResponse = false;
         int blankTextResponses = 0;
@@ -274,7 +275,7 @@ public class ExecutionLoop {
             List<LLMResponse.ToolCall> toolCalls = response.getToolCalls();
             ToolExecutor.ToolExecutionBatch batch = toolExecutor.executeToolCalls(
                     toolCalls, execContext, session, planState,
-                    activityRequestId, activeSkillName, userMessage, executedCalls);
+                    activityRequestId, activeSkillName, userMessage, executedCalls, failedTools);
             session = batch.session();
             planState = batch.planState();
             totalToolCalls += batch.toolCallCount();
@@ -310,6 +311,9 @@ public class ExecutionLoop {
 
             // 记录本轮工具执行状态（供分支 2 文本结束守卫校验交付不变量）
             toolStatuses.putAll(batch.toolStatuses());
+            batch.toolStatuses().forEach((toolName, status) -> {
+                if (status == ResultStatus.FAILED) failedTools.add(toolName);
+            });
         }
 
         // 达到局部上限

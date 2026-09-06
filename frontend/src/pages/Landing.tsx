@@ -81,7 +81,7 @@ export default function Landing({ onStart, onVisualization, user, onLogout }: {
       <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-5 py-5">
         <div className="flex items-center gap-2.5">
           <BrandMark size={34} />
-          <span className="text-[15px] font-semibold tracking-tight">Claw Assistant</span>
+          <span className="text-[15px] font-semibold tracking-tight">知行</span>
         </div>
         <div className="flex items-center gap-3">
           <span className="hidden text-sm text-ink-soft sm:inline">{user.displayName}</span>
@@ -124,7 +124,7 @@ export default function Landing({ onStart, onVisualization, user, onLogout }: {
           <span className="whitespace-nowrap">你的智能助理</span>
         </h1>
         <p className="mx-auto mt-5 max-w-xl text-[15.5px] leading-relaxed text-ink-soft">
-          Claw 会像人一样记住你们聊过的事、执行复杂任务、规划长期目标，
+          知行会像人一样记住你们聊过的事、执行复杂任务、规划长期目标，
           并在需要时主动找你。你现在只需直接告诉它。
         </p>
 
@@ -189,7 +189,7 @@ export default function Landing({ onStart, onVisualization, user, onLogout }: {
 
       {/* ===== 页脚 ===== */}
       <footer className="border-t border-line py-6 text-center text-[12px] text-ink-faint">
-        Claw Assistant · 会记忆 · 会执行 · 会主动跟进
+        知行 · 会记忆 · 会执行 · 会主动跟进
       </footer>
     </div>
   );

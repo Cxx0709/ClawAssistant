@@ -34,4 +34,14 @@ class TravelPromptContractTest {
         assertFalse(prompt.contains("第 1 阶段") && prompt.contains("第 2 阶段"),
                 "不得写死阶段编号");
     }
+
+    @Test
+    void requiresThreeOptionsBeforeSelectionByDefault() throws Exception {
+        String prompt = Files.readString(Path.of(
+                "src/main/resources/prompts/skills/travel.txt"),
+                StandardCharsets.UTF_8);
+
+        assertTrue(prompt.contains("生成并保存 3 个差异明显的候选方案"));
+        assertTrue(prompt.contains("确认返回 OPTIONS_SAVED 后才能让用户选择"));
+    }
 }

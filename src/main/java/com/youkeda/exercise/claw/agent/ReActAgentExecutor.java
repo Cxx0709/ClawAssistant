@@ -330,7 +330,7 @@ public class ReActAgentExecutor implements AgentExecutor {
                     log.info("快速对话回复 | reply={}", reply);
                     contextStore.appendToTurn(roundId, new Message("assistant", reply));
                     contextStore.closeTurn(roundId);
-                    longTermMemoryService.processAndStoreAsync(userMessage, reply);
+                    longTermMemoryService.processAndStoreAsync(userMessage, reply, activeSkillName);
                     skillSessionStore.save(userId, session);
                     activityRecorder.requestCompleted(
                             activityRequestId, System.currentTimeMillis() - requestStartedAt);
@@ -382,7 +382,7 @@ public class ReActAgentExecutor implements AgentExecutor {
 
         // Handle loop result
         return handleLoopResult(loopResult, roundId, userMessage, session, userId,
-                systemPrompt, activityRequestId, requestStartedAt, streamObserver);
+                activeSkillName, systemPrompt, activityRequestId, requestStartedAt, streamObserver);
     }
 
     // ==================== 循环结果处理 ====================
@@ -393,6 +393,7 @@ public class ReActAgentExecutor implements AgentExecutor {
             String userMessage,
             SkillSession session,
             String userId,
+            String activeSkillName,
             String systemPrompt,
             String activityRequestId,
             long requestStartedAt,
@@ -409,7 +410,8 @@ public class ReActAgentExecutor implements AgentExecutor {
                 String reply = result.reply();
                 contextStore.appendToTurn(roundId, new Message("assistant", reply));
                 contextStore.closeTurn(roundId);
-                longTermMemoryService.processAndStoreAsync(userMessage, reply);
+                longTermMemoryService.processAndStoreAsync(userMessage, reply, activeSkillName,
+                        executedToolNames(result.messages()));
                 skillSessionStore.save(userId, session);
                 activityRecorder.requestCompleted(
                         activityRequestId, System.currentTimeMillis() - requestStartedAt);
@@ -429,7 +431,8 @@ public class ReActAgentExecutor implements AgentExecutor {
                         : executionLoop.synthesize(systemPrompt, result.messages());
                 contextStore.appendToTurn(roundId, new Message("assistant", synthesizedReply));
                 contextStore.closeTurn(roundId);
-                longTermMemoryService.processAndStoreAsync(userMessage, synthesizedReply);
+                longTermMemoryService.processAndStoreAsync(userMessage, synthesizedReply, activeSkillName,
+                        executedToolNames(result.messages()));
                 skillSessionStore.save(userId, session);
                 activityRecorder.requestCompleted(
                         activityRequestId, System.currentTimeMillis() - requestStartedAt);
@@ -444,5 +447,16 @@ public class ReActAgentExecutor implements AgentExecutor {
         contextStore.appendToTurn(roundId, new Message("assistant", ERROR_REPLY));
         contextStore.closeTurn(roundId);
         return ERROR_REPLY;
+    }
+
+    private Set<String> executedToolNames(List<Message> messages) {
+        if (messages == null) return Set.of();
+        Set<String> names = new LinkedHashSet<>();
+        for (Message message : messages) {
+            if (message != null && message.isToolCall() && message.toolName() != null) {
+                names.add(message.toolName());
+            }
+        }
+        return Set.copyOf(names);
     }
 }

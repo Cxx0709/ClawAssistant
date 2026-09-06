@@ -66,7 +66,7 @@ export default function ConversationSidebar(props: Props) {
         <div className="mb-2.5 flex items-baseline justify-between px-0.5">
           <div>
             <h2 className="text-[14px] font-semibold tracking-[-.01em] text-ink">对话记录</h2>
-            <p className="mt-0.5 text-[10.5px] text-ink-faint">查找和管理与 Claw 的对话</p>
+            <p className="mt-0.5 text-[10.5px] text-ink-faint">查找和管理与知行的对话</p>
           </div>
           <span className="tabular-nums text-[10.5px] text-ink-faint">{props.conversations.length} 条</span>
         </div>

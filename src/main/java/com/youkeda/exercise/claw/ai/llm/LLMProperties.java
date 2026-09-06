@@ -23,12 +23,12 @@ public class LLMProperties {
     /**
      * API 基础地址
      */
-    private String baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+    private String baseUrl = "https://api.xiaomimimo.com/v1";
 
     /**
      * 模型名称
      */
-    private String model = "qwen3.6-plus";
+    private String model = "mimo-v2.5-pro";
 
     /**
      * 流式响应连续多久没有收到任何一行数据后主动断开。

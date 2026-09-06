@@ -14,6 +14,9 @@ function Markdown({ content }: { content: string }) {
               {children}
             </a>
           ),
+          // LLM occasionally wraps a superseded/estimated amount in ~~...~~.
+          // Do not render that as a deletion: strikethrough makes prices look invalid.
+          del: ({ children }) => <span>{children}</span>,
         }}
       >
         {content}

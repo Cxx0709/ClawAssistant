@@ -25,7 +25,7 @@ public class ToolResultStatusParser {
                 case "SUCCESS", "STARTED", "ALL_COLLECTED", "RESET",
                      "OPTIONS_SAVED", "OPTION_SELECTED", "OPTION_COMBINED",
                      "OPTION_REVISED", "REVISION_RECORDED" -> ResultStatus.SUCCESS;
-                case "PARTIAL", "NEED_MORE_INFORMATION" -> ResultStatus.PARTIAL;
+                case "PARTIAL", "NEED_MORE_INFORMATION", "BUDGET_DECISION_REQUIRED" -> ResultStatus.PARTIAL;
                 case "BLOCKED" -> ResultStatus.BLOCKED;
                 default -> ResultStatus.FAILED;
             };
