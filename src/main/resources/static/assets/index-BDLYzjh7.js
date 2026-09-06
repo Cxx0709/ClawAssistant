@@ -24913,7 +24913,7 @@ function RolesPage({ onBack }) {
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: label, children: "选择预设音色" }),
               /* @__PURE__ */ jsxRuntimeExports.jsxs("select", { className: input, value: voiceId, onChange: (e) => setVoiceId(e.target.value), children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "", children: "不使用" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "longlaoyi_v3", children: "不使用" }),
                 /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "longanyang", children: "阳光大男孩" }),
                 /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "longanhuan_v3", children: "欢脱元气女" }),
                 /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "longhuhu_v3", children: "天真烂漫女童" }),
@@ -24925,8 +24925,7 @@ function RolesPage({ onBack }) {
             !creating && selected && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-lg border border-[#e0d8f0] bg-[#f8f5ff] p-4", children: [
               /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mb-2 flex items-center gap-2", children: [
                 /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-lg", children: "🎙️" }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm font-medium text-[#6c5ce7]", children: "声音定制" }),
-                selected.voiceId ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700", children: "已选预设音色" }) : selected.voiceAudioUrl ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700", children: "已绑定声音" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500", children: "未绑定" })
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm font-medium text-[#6c5ce7]", children: "声音定制" })
               ] }),
               /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mb-3 text-xs text-ink-faint", children: "上方选择预设音色后，AI 就会用该音色说话。也可以上传声音样本进行存档。" }),
               /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [

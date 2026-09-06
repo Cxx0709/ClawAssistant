@@ -341,7 +341,7 @@ export default function RolesPage({ onBack }: { onBack: () => void }) {
                   <div>
                     <label className={label}>选择预设音色</label>
                     <select className={input} value={voiceId} onChange={e => setVoiceId(e.target.value)}>
-                      <option value="">不使用</option>
+                      <option value="longlaoyi_v3">不使用</option>
                       <option value="longanyang">阳光大男孩</option>
                       <option value="longanhuan_v3">欢脱元气女</option>
                       <option value="longhuhu_v3">天真烂漫女童</option>
@@ -356,13 +356,6 @@ export default function RolesPage({ onBack }: { onBack: () => void }) {
                       <div className="mb-2 flex items-center gap-2">
                         <span className="text-lg">🎙️</span>
                         <span className="text-sm font-medium text-[#6c5ce7]">声音定制</span>
-                        {selected.voiceId ? (
-                          <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">已选预设音色</span>
-                        ) : selected.voiceAudioUrl ? (
-                          <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">已绑定声音</span>
-                        ) : (
-                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">未绑定</span>
-                        )}
                       </div>
                       <p className="mb-3 text-xs text-ink-faint">
                         上方选择预设音色后，AI 就会用该音色说话。也可以上传声音样本进行存档。

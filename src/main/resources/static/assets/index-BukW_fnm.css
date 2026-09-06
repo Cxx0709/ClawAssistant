@@ -1923,10 +1923,6 @@ video {
 .bg-gray-50\/50 {
   background-color: rgb(249 250 251 / 0.5);
 }
-.bg-green-100 {
-  --tw-bg-opacity: 1;
-  background-color: rgb(220 252 231 / var(--tw-bg-opacity, 1));
-}
 .bg-ink {
   --tw-bg-opacity: 1;
   background-color: rgb(20 21 23 / var(--tw-bg-opacity, 1));
@@ -2577,10 +2573,6 @@ video {
 .text-gray-900 {
   --tw-text-opacity: 1;
   color: rgb(17 24 39 / var(--tw-text-opacity, 1));
-}
-.text-green-700 {
-  --tw-text-opacity: 1;
-  color: rgb(21 128 61 / var(--tw-text-opacity, 1));
 }
 .text-ink {
   --tw-text-opacity: 1;

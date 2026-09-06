@@ -14,6 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -28,6 +29,12 @@ public class AiRoleController {
     private final UserExecutionContext context;
     private final VoiceService voiceService;
     private final VoiceClient voiceClient;
+
+    /** 预设音色 ID 列表（使用 cosyvoice-v3-flash 模型） */
+    private static final Set<String> PRESET_VOICES = Set.of(
+            "longanyang", "longanhuan_v3", "longhuhu_v3", "longxian_v3", "longlaoyi_v3",
+            "longling_v3", "longniuniu_v3"
+    );
 
     @Value("${app.public-base-url:}")
     private String publicBaseUrl;
@@ -117,6 +124,9 @@ public class AiRoleController {
                 }
                 String fileName = id + "_" + System.currentTimeMillis() + extension;
                 java.io.File voiceFile = new java.io.File(voiceDir, fileName);
+
+                // 注意：必须在 transferTo 之前读取字节，否则临时文件被清理后 getBytes() 会失败
+                byte[] audioBytes = file.getBytes();
                 file.transferTo(voiceFile);
 
                 // 存相对路径，部署后自动用公网域名访问
@@ -127,7 +137,8 @@ public class AiRoleController {
                         role.background(), role.speakingStyle(), role.catchphrase(), voiceUrl)
                         .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "更新角色声音失败"));
 
-                // 不再调用 voice-enrollment API，直接保存文件即可
+                // 演示模式：上传成功即返回，TTS 使用角色当前 voiceId（"不使用" → 龙老姨老年女声）
+                log.info("声音样本上传成功（演示模式） | roleId={} | voiceId={}", id, updatedRole.voiceId());
 
                 return updatedRole;
             } catch (ResponseStatusException e) {
@@ -163,7 +174,14 @@ public class AiRoleController {
             }
 
             try {
-                VoiceClient.TtsResult ttsResult = voiceClient.tts(text, voiceId);
+                VoiceClient.TtsResult ttsResult;
+                if (voiceId != null && !voiceId.isBlank() && !PRESET_VOICES.contains(voiceId)) {
+                    // 自定义音色（来自 voice-enrollment），使用 cosyvoice-v3.5-plus 模型
+                    ttsResult = voiceClient.ttsWithVoiceId(text, voiceId);
+                } else {
+                    // 预设音色或默认，使用 cosyvoice-v3-flash 模型
+                    ttsResult = voiceClient.tts(text, voiceId);
+                }
                 if (ttsResult != null && ttsResult.audioBytes() != null) {
                     log.info("语音合成成功 | roleId={} | voiceId={}", id, voiceId);
                     return ResponseEntity.ok()

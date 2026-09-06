@@ -37,7 +37,7 @@ public class VoiceClient {
     private static final long ASYNC_POLL_BASE_MS = 2000;
 
     /** DashScope 文件上传 API */
-    private static final String FILE_UPLOAD_URL = "https://dashscope.aliyuncs.com/api/v1/files";
+    private static final String FILE_UPLOAD_POLICY_URL = "https://dashscope.aliyuncs.com/api/v1/uploads";
 
     /** DashScope 异步任务查询 API */
     private static final String TASK_QUERY_URL = "https://dashscope.aliyuncs.com/api/v1/tasks/";
@@ -535,63 +535,46 @@ public class VoiceClient {
      * 上传音频到 DashScope 文件服务
      */
     public String uploadFile(byte[] audioBytes, String fileName) throws Exception {
+        // 使用公网文件托管服务 0x0.st 获取公开可访问的 HTTP URL
+        // （DashScope OSS 直传的文件 ACL 为 private，voice-enrollment 无法下载）
         String boundary = "Boundary_" + UUID.randomUUID().toString().replace("-", "");
 
-        // 构建 multipart body
-        byte[] body = buildMultipartBody(audioBytes, fileName, boundary);
+        StringBuilder sb = new StringBuilder();
+        sb.append("--").append(boundary).append("\r\n");
+        sb.append("Content-Disposition: form-data; name=\"file\"; filename=\"").append(fileName).append("\"\r\n");
+        sb.append("Content-Type: application/octet-stream\r\n\r\n");
+
+        byte[] headerBytes = sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] footerBytes = ("\r\n--" + boundary + "--\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        ByteBuffer buffer = ByteBuffer.allocate(headerBytes.length + audioBytes.length + footerBytes.length);
+        buffer.put(headerBytes);
+        buffer.put(audioBytes);
+        buffer.put(footerBytes);
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(FILE_UPLOAD_URL))
+                .uri(URI.create("https://0x0.st"))
                 .timeout(Duration.ofSeconds(FILE_UPLOAD_TIMEOUT_SECONDS))
-                .header("Authorization", "Bearer " + properties.getApiKey())
                 .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+                .POST(HttpRequest.BodyPublishers.ofByteArray(buffer.array()))
                 .build();
 
         HttpResponse<String> response = httpClient.send(request,
                 HttpResponse.BodyHandlers.ofString());
 
-        // 解析响应
-        JsonNode root = objectMapper.readTree(response.body());
-
-        // 检查错误
-        JsonNode codeNode = root.get("code");
-        if (codeNode != null && !codeNode.isNull()) {
-            int code = codeNode.asInt(0);
-            if (code != 200) {
-                throw new VoiceClientException("FileUploadFailed",
-                        "文件上传失败 | code=" + code + " | msg=" + root.path("message").asText());
-            }
+        int status = response.statusCode();
+        if (status != 200) {
+            log.warn("公网文件上传失败 | status={} | body={}", status, response.body());
+            return null;
         }
 
-        JsonNode fileUrlNode = root.path("output").path("file_url");
-        if (fileUrlNode != null && !fileUrlNode.isNull()) {
-            return fileUrlNode.asText();
-        }
-
-        log.warn("文件上传响应缺少 file_url: {}", response.body());
-        return null;
+        String publicUrl = response.body().trim();
+        log.info("公网文件上传成功 | url={}", publicUrl);
+        return publicUrl;
     }
 
-    /**
-     * 构建 multipart/form-data 请求体
-     */
-    private byte[] buildMultipartBody(byte[] fileBytes, String fileName, String boundary) throws Exception {
-        String header = "--" + boundary + "\r\n"
-                + "Content-Disposition: form-data; name=\"file\"; filename=\"" + fileName + "\"\r\n"
-                + "Content-Type: application/octet-stream\r\n\r\n";
-        String footer = "\r\n--" + boundary + "--\r\n";
 
-        byte[] headerBytes = header.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        byte[] footerBytes = footer.getBytes(java.nio.charset.StandardCharsets.UTF_8);
 
-        ByteBuffer buffer = ByteBuffer.allocate(headerBytes.length + fileBytes.length + footerBytes.length);
-        buffer.put(headerBytes);
-        buffer.put(fileBytes);
-        buffer.put(footerBytes);
-
-        return buffer.array();
-    }
 
     /**
      * 构建 Paraformer ASR 请求体
