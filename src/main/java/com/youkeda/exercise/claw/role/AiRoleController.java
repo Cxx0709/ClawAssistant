@@ -33,7 +33,7 @@ public class AiRoleController {
     /** 预设音色 ID 列表（使用 cosyvoice-v3-flash 模型） */
     private static final Set<String> PRESET_VOICES = Set.of(
             "longanyang", "longanhuan_v3", "longhuhu_v3", "longxian_v3", "longlaoyi_v3",
-            "longling_v3", "longniuniu_v3"
+            "longling_v3", "longniuniu_v3", "longlaobo_v3", "longlaotie_v3", "longyingmu_v3"
     );
 
     @Value("${app.public-base-url:}")

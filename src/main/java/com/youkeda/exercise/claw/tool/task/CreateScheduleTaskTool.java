@@ -1,5 +1,7 @@
 package com.youkeda.exercise.claw.tool.task;
 import com.youkeda.exercise.claw.feature.task.service.TaskCreator;
+import com.youkeda.exercise.claw.identity.UserProfileRepository;
+import com.youkeda.exercise.claw.agent.memory.longterm.LongTermMemoryService;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -26,12 +28,18 @@ public class CreateScheduleTaskTool extends AbstractTool {
     private static final Logger log = LoggerFactory.getLogger(CreateScheduleTaskTool.class);
 
     private final TaskCreator taskCreator;
+    private final UserProfileRepository profiles;
+    private final LongTermMemoryService memoryService;
 
     public CreateScheduleTaskTool(ObjectMapper objectMapper,
                                       ToolRegistry functionRegistry,
-                                      TaskCreator taskCreator) {
+                                      TaskCreator taskCreator,
+                                      UserProfileRepository profiles,
+                                      LongTermMemoryService memoryService) {
         super(functionRegistry, objectMapper);
         this.taskCreator = taskCreator;
+        this.profiles = profiles;
+        this.memoryService = memoryService;
     }
 
     @Override
@@ -88,6 +96,17 @@ public class CreateScheduleTaskTool extends AbstractTool {
             String userId = context.userId();
             if (userId == null || userId.isBlank()) {
                 return "{\"error\": \"缺少用户ID\"}";
+            }
+
+            // 邮箱校验：若开启了邮件提醒但用户未提供邮箱，提示先告知邮箱
+            if (profiles.emailNotificationsEnabled(userId)) {
+                String email = profiles.getEmail(userId);
+                if (email == null || email.isBlank()) {
+                    email = memoryService.findEmailAddress(userId);
+                }
+                if (email == null || email.isBlank()) {
+                    return "{\"status\": \"NEED_MORE_INFORMATION\", \"message\": \"创建提醒需要你的邮箱地址来发送通知，但你还没有告诉我。请先把你的邮箱告诉我，我会立刻帮你创建提醒。\"}";
+                }
             }
 
             // 委托 TaskCreator 创建

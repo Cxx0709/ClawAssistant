@@ -37,10 +37,10 @@ public class EmailNotificationService {
     @Value("${mail.notification.enabled:true}")
     private boolean enabled;
 
-    @Value("${mail.notification.from-name:Claw Assistant}")
+    @Value("${mail.notification.from-name:Zhixing}")
     private String fromName;
 
-    @Value("${mail.notification.subject-prefix:[Claw提醒]}")
+    @Value("${mail.notification.subject-prefix:[Zhixing Reminder]}")
     private String subjectPrefix;
 
     @Value("${spring.mail.username:}")
@@ -148,7 +148,7 @@ public class EmailNotificationService {
                   <div style="background: #ffffff; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px; padding: 24px;">
                     <div style="font-size: 15px; line-height: 1.7; color: #1f2937;">%s</div>
                     <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
-                    <p style="font-size: 12px; color: #9ca3af; margin: 0;">此邮件由 Claw Assistant 自动发送，请勿直接回复。如需关闭邮件提醒，请在应用设置中修改。</p>
+                    <p style="font-size: 12px; color: #9ca3af; margin: 0;">此邮件由 知行 自动发送，请勿直接回复。如需关闭邮件提醒，请在应用设置中修改。</p>
                   </div>
                 </div>
                 """.formatted(escapedTitle, escapeHtml(source), timestamp, escapedContent);

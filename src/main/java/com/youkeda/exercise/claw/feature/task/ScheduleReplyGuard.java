@@ -6,6 +6,7 @@ import com.youkeda.exercise.claw.agent.runtime.ScheduleReplyInspector;
 import com.youkeda.exercise.claw.agent.runtime.SkillReplyGuard;
 import com.youkeda.exercise.claw.agent.runtime.SkillReplyGuard.GuardContext;
 import com.youkeda.exercise.claw.agent.runtime.SkillReplyGuard.GuardResult;
+import com.youkeda.exercise.claw.identity.UserProfileRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,7 @@ import java.util.Set;
  * <p>原逻辑内联在 {@code ExecutionLoop} 分支 2，批次 2 外移到 feature/task：
  * <ul>
  *   <li>仅用户确为「创建定时提醒」意图时拦截</li>
+ *   <li>层0：用户未绑定邮箱 → 强制提示用户先告知邮箱地址</li>
  *   <li>层1：模型声称已创建/设置，但本轮循环未实际调用 {@code create_schedule_task} → 幻觉，强制重试</li>
  *   <li>层2：模型既未声称完成、也未向用户澄清（卡壳/敷衍）→ 提示补做</li>
  *   <li>反问「几点提醒你呢？」属澄清，放行，避免「帮我设置提醒」死循环</li>
@@ -30,6 +32,12 @@ public class ScheduleReplyGuard implements SkillReplyGuard {
 
     /** 工具调用签名前缀（与 ToolExecutor 的 {@code toolName|arguments} 格式一致） */
     private static final String CREATE_SCHEDULE_SIGNATURE_PREFIX = "create_schedule_task|";
+
+    private final UserProfileRepository userProfileRepository;
+
+    public ScheduleReplyGuard(UserProfileRepository userProfileRepository) {
+        this.userProfileRepository = userProfileRepository;
+    }
 
     /** 横切：定时提醒意图不绑定特定 skill，由 {@link ScheduleIntentResolver} 自行判断 */
     @Override
@@ -50,6 +58,20 @@ public class ScheduleReplyGuard implements SkillReplyGuard {
         boolean toolCalled = wasScheduleTaskCalled(executedCalls);
         if (!createIntent || toolCalled) {
             return GuardResult.allow();
+        }
+
+        // 层0：创建提醒前必须有绑定邮箱，没有则强制提示用户告知
+        String userId = context.session() != null ? context.session().userId() : null;
+        if (userId != null && !userId.isBlank()) {
+            String email = userProfileRepository.getEmail(userId);
+            if (email == null || email.isBlank()) {
+                log.info("创建定时提醒但用户未绑定邮箱，提示用户告知邮箱 | userId={}", userId);
+                return GuardResult.reject(
+                        "用户要求创建定时提醒，但尚未绑定邮箱地址。"
+                        + "定时提醒需要通过邮件发送，请直接回复用户："
+                        + "「请告诉我你的邮箱地址，我才能帮你设置提醒并发送邮件通知。」"
+                        + "不要调用 create_schedule_task，等用户提供邮箱后再创建。");
+            }
         }
 
         boolean claimsDone = ScheduleReplyInspector.claimsCreation(reply);

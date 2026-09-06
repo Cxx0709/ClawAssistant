@@ -9,11 +9,14 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youkeda.exercise.claw.agent.memory.longterm.LongTermMemoryService;
 import com.youkeda.exercise.claw.agent.memory.longterm.MemoryCategory;
 import com.youkeda.exercise.claw.agent.memory.longterm.MemoryItem;
+import com.youkeda.exercise.claw.identity.UserProfileRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 记忆管理工具（LLM Function Calling）
@@ -29,13 +32,19 @@ public class MemoryTool extends AbstractTool {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryTool.class);
 
+    private static final Pattern EMAIL_PATTERN = Pattern.compile(
+            "[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}");
+
     private final LongTermMemoryService memoryService;
+    private final UserProfileRepository userProfileRepository;
 
     public MemoryTool(ObjectMapper objectMapper,
                           ToolRegistry functionRegistry,
-                          LongTermMemoryService memoryService) {
+                          LongTermMemoryService memoryService,
+                          UserProfileRepository userProfileRepository) {
         super(functionRegistry, objectMapper);
         this.memoryService = memoryService;
+        this.userProfileRepository = userProfileRepository;
     }
 
     @Override
@@ -85,7 +94,7 @@ public class MemoryTool extends AbstractTool {
                 case "save" -> handleSave(args);
                 case "list" -> handleList();
                 case "recall" -> handleRecall(args);
-                case "delete" -> handleDelete(args);
+                case "delete" -> handleDelete(args, context);
                 default -> errorJson("不支持的 action: " + actionStr);
             };
         } catch (Exception e) {
@@ -146,7 +155,7 @@ public class MemoryTool extends AbstractTool {
         }
     }
 
-    private String handleDelete(JsonNode args) {
+    private String handleDelete(JsonNode args, ToolExecutionContext context) {
         String content = args.path("content").asText("");
         if (content.isBlank()) {
             return errorJson("delete 操作需要 content 参数描述要删除的记忆");
@@ -169,6 +178,15 @@ public class MemoryTool extends AbstractTool {
 
         boolean deleted = memoryService.delete(target.id());
 
+        // 如果删除的记忆包含邮箱地址，同时清除 user_profile 里的绑定邮箱
+        if (deleted && containsEmail(target.content())) {
+            String userId = context != null ? context.userId() : null;
+            if (userId != null && !userId.isBlank()) {
+                userProfileRepository.setEmail(userId, null);
+                log.info("删除邮箱记忆时同步清除 user_profile 邮箱 | userId={}", userId);
+            }
+        }
+
         ObjectNode result = objectMapper.createObjectNode();
         result.put("action", "delete");
         result.put("success", deleted);
@@ -182,6 +200,12 @@ public class MemoryTool extends AbstractTool {
     }
 
     // ==================== 工具方法 ====================
+
+    private static boolean containsEmail(String text) {
+        if (text == null || text.isBlank()) return false;
+        Matcher matcher = EMAIL_PATTERN.matcher(text);
+        return matcher.find();
+    }
 
     private String buildMemoryListResult(String action, List<MemoryItem> memories) {
         ObjectNode result = objectMapper.createObjectNode();

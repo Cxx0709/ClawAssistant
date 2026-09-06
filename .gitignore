@@ -1,4 +1,4 @@
-target/
+﻿target/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
@@ -106,3 +106,17 @@ logs/
 .workbuddy
 
 周报-2026-08-02至08-09.md
+# Qdrant vector database
+qdrant/
+
+# Screenshots and images
+*.png
+*.jpg
+*.jpeg
+!frontend/src/**/*.png
+!frontend/public/**/*.png
+
+# Misc
+*.log
+*.lock
+data/

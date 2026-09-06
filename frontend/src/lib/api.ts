@@ -326,6 +326,16 @@ export async function markAllNotificationsRead(): Promise<void> {
   await apiFetch('/api/notifications/read-all', { method: 'POST' }).catch(() => undefined);
 }
 
+export async function deleteNotification(id: number): Promise<boolean> {
+  try {
+    const res = await apiFetch(`/api/notifications/${id}`, { method: 'DELETE' });
+    const data = await res.json() as { deleted?: boolean };
+    return data.deleted === true;
+  } catch {
+    return false;
+  }
+}
+
 // ===== 定时/盯守任务（Agent 雷达页） =====
 
 export async function fetchTasks(options: { type?: 'REMINDER' | 'AGENT' } = {}): Promise<ScheduledTaskItem[]> {

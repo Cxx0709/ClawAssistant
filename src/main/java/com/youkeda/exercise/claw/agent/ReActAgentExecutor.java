@@ -208,6 +208,8 @@ public class ReActAgentExecutor implements AgentExecutor {
         log.info("AgentExecutor 执行 | message={}", userMessage);
 
         String userId = context.getUserId();
+        // 同步提取邮箱：必须在工具调用前完成，避免定时任务校验时邮箱尚未绑定的竞态。
+        longTermMemoryService.bindEmailFromMessage(userId, userMessage);
 
         // Turn 贯通（ADR Phase 1B）：roundId 由入口（saveMessageToContext 的 beginTurn）生成并随消息传入。
         // 系统触发（定时任务，如 AgentTaskExecutor）无 roundId → 此处自行 beginTurn（initiator=SYSTEM）。

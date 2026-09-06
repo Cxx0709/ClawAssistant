@@ -164,6 +164,12 @@ public class DatabaseNotificationSink implements NotificationSink {
                 """, System.currentTimeMillis(), userId);
     }
 
+    public boolean delete(String userId, long id) {
+        return jdbc.update("""
+                DELETE FROM notification_outbox WHERE id = ? AND user_id = ?
+                """, id, userId) > 0;
+    }
+
     private static NotificationRecord map(java.sql.ResultSet rs) throws java.sql.SQLException {
         long readAt = rs.getLong("read_at");
         boolean unreadTimestamp = rs.wasNull();

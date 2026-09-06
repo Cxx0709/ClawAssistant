@@ -6,18 +6,17 @@ import {
   fetchNotifications,
   fetchStatus,
   fetchTodaySchedule,
-  fetchUserProfile,
+  fetchTasks,
+  cancelTask,
   markNotificationRead,
-  clearUserEmail,
-  setEmailNotificationsEnabled,
-  setUserEmail,
+  deleteNotification,
 } from '../lib/api';
 import {
   activityDotColor,
   categoryLabel,
   goalStatusLabel,
 } from '../lib/format';
-import type { ActivityItem, GoalItem, MemoryItem, NotificationItem, SystemStatus, TodaySchedule } from '../lib/types';
+import type { ActivityItem, GoalItem, MemoryItem, NotificationItem, ScheduledTaskItem, SystemStatus, TodaySchedule } from '../lib/types';
 
 /** 每次对话回合结束 / 抽屉打开时递增，触发重新拉取 */
 export interface RailProps {
@@ -46,11 +45,7 @@ export default function RightRail({ refreshToken }: RailProps) {
   const [activities, setActivities] = useState<ActivityItem[] | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[] | null>(null);
   const [todaySchedule, setTodaySchedule] = useState<TodaySchedule | null>(null);
-  const [email, setEmail] = useState('');
-  const [emailEnabled, setEmailEnabled] = useState(true);
-  const [emailLoading, setEmailLoading] = useState(true);
-  const [emailSaving, setEmailSaving] = useState(false);
-  const [emailNotice, setEmailNotice] = useState('');
+  const [reminders, setReminders] = useState<ScheduledTaskItem[] | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -60,16 +55,7 @@ export default function RightRail({ refreshToken }: RailProps) {
     fetchActivities().then((a) => alive && setActivities(a));
     fetchNotifications().then((items) => alive && setNotifications(items));
     fetchTodaySchedule().then((schedule) => alive && setTodaySchedule(schedule));
-    setEmailLoading(true);
-    fetchUserProfile()
-      .then((profile) => {
-        if (!alive) return;
-        setEmail(profile.email);
-        setEmailEnabled(profile.emailNotificationsEnabled);
-        setEmailNotice('');
-      })
-      .catch(() => alive && setEmailNotice('邮箱设置加载失败'))
-      .finally(() => alive && setEmailLoading(false));
+    fetchTasks({ type: 'REMINDER' }).then((items) => alive && setReminders(items.filter((t) => t.status === 'ACTIVE' || t.status === 'RUNNING')));
     return () => {
       alive = false;
     };
@@ -90,56 +76,21 @@ export default function RightRail({ refreshToken }: RailProps) {
 
   const connected = status?.appReady;
 
-  const saveEmail = async () => {
-    const normalized = email.trim();
-    if (!normalized) {
-      setEmailNotice('请输入邮箱地址');
-      return;
-    }
-    setEmailSaving(true);
-    setEmailNotice('');
+  const handleCancelReminder = async (id: number) => {
     try {
-      const result = await setUserEmail(normalized);
-      if (!result.success) {
-        setEmailNotice(result.error || '保存失败，请稍后重试');
-        return;
-      }
-      setEmail(result.email || normalized);
-      setEmailNotice('邮箱已保存');
+      await cancelTask(id);
+      setReminders((prev) => (prev ? prev.filter((r) => r.id !== id) : prev));
     } catch {
-      setEmailNotice('保存失败，请稍后重试');
-    } finally {
-      setEmailSaving(false);
+      // ignore
     }
   };
 
-  const removeEmail = async () => {
-    setEmailSaving(true);
-    setEmailNotice('');
+  const handleDeleteNotification = async (id: number) => {
     try {
-      await clearUserEmail();
-      setEmail('');
-      setEmailNotice('绑定邮箱已清除');
+      await deleteNotification(id);
+      setNotifications((prev) => (prev ? prev.filter((n) => n.id !== id) : prev));
     } catch {
-      setEmailNotice('清除失败，请稍后重试');
-    } finally {
-      setEmailSaving(false);
-    }
-  };
-
-  const toggleEmailNotifications = async () => {
-    const next = !emailEnabled;
-    setEmailSaving(true);
-    setEmailNotice('');
-    try {
-      const result = await setEmailNotificationsEnabled(next);
-      if (!result.success) throw new Error('update failed');
-      setEmailEnabled(next);
-      setEmailNotice(next ? '邮件提醒已开启' : '邮件提醒已关闭');
-    } catch {
-      setEmailNotice('更新失败，请稍后重试');
-    } finally {
-      setEmailSaving(false);
+      // ignore
     }
   };
 
@@ -192,89 +143,43 @@ export default function RightRail({ refreshToken }: RailProps) {
             </div>
           )}
           {(notifications ?? []).filter((item) => item.source !== 'COURSE_REMINDER').slice(0, 12).map((item) => (
-            <button
+            <div
               key={item.id}
-              type="button"
-              onClick={async () => {
-                if (item.status === 'UNREAD') {
-                  await markNotificationRead(item.id);
-                  setNotifications((current) => current?.map((entry) => entry.id === item.id ? { ...entry, status: 'READ' } : entry) ?? []);
-                }
-              }}
-              className={`w-full rounded-lg border px-3 py-2.5 text-left ${item.status === 'UNREAD' ? 'border-brand/25 bg-brand-dim/50' : 'border-line/70 bg-white'}`}
+              className={`group relative w-full rounded-lg border px-3 py-2.5 ${item.status === 'UNREAD' ? 'border-brand/25 bg-brand-dim/50' : 'border-line/70 bg-white'}`}
             >
-              <p className="flex items-center gap-2 text-[12.5px] font-medium text-ink">
-                {item.status === 'UNREAD' && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />}
-                <span className="truncate">{item.title}</span>
-              </p>
-              <p className="mt-1 line-clamp-3 text-[11.5px] leading-relaxed text-ink-soft">{item.content}</p>
-              <p className="mt-1 font-mono text-[10px] text-ink-faint">{new Date(toMillis(item.createdAt)).toLocaleString()}</p>
-            </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (item.status === 'UNREAD') {
+                    await markNotificationRead(item.id);
+                    setNotifications((current) => current?.map((entry) => entry.id === item.id ? { ...entry, status: 'READ' } : entry) ?? []);
+                  }
+                }}
+                className="block w-full text-left"
+              >
+                <p className="flex items-center gap-2 text-[12.5px] font-medium text-ink">
+                  {item.status === 'UNREAD' && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />}
+                  <span className="truncate">{item.title}</span>
+                </p>
+                <p className="mt-1 line-clamp-3 text-[11.5px] leading-relaxed text-ink-soft">{item.content}</p>
+                <p className="mt-1 font-mono text-[10px] text-ink-faint">{new Date(toMillis(item.createdAt)).toLocaleString()}</p>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleDeleteNotification(item.id);
+                }}
+                className="absolute right-2 top-2 rounded-md p-1 text-ink-faint opacity-0 transition-all hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+                aria-label="删除通知"
+                title="删除通知"
+              >
+                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           ))}
-        </Section>
-
-        <div className="mx-4 border-t border-line/70" />
-
-        <Section title="邮件提醒">
-          <div className="rounded-lg border border-line/80 bg-white px-3 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[12.5px] font-medium text-ink">同步发送到邮箱</p>
-                <p className="mt-0.5 text-[10.5px] text-ink-faint">站内通知不受此开关影响</p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={emailEnabled}
-                aria-label="邮件提醒"
-                disabled={emailLoading || emailSaving}
-                onClick={() => void toggleEmailNotifications()}
-                className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${emailEnabled ? 'bg-brand' : 'bg-line'}`}
-              >
-                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${emailEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
-              </button>
-            </div>
-            <label htmlFor="notification-email" className="mt-3 block text-[10.5px] font-medium text-ink-soft">接收邮箱</label>
-            <div className="mt-1.5 flex gap-1.5">
-              <input
-                id="notification-email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                disabled={emailLoading || emailSaving}
-                onChange={(event) => {
-                  setEmail(event.target.value);
-                  setEmailNotice('');
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') void saveEmail();
-                }}
-                placeholder={emailLoading ? '加载中…' : 'name@example.com'}
-                className="min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 py-2 text-xs text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-brand disabled:opacity-50"
-              />
-              <button
-                type="button"
-                disabled={emailLoading || emailSaving}
-                onClick={() => void saveEmail()}
-                className="rounded-md bg-brand px-2.5 py-2 text-xs font-medium text-white transition-colors hover:bg-brand-deep disabled:opacity-50"
-              >
-                保存
-              </button>
-            </div>
-            <div className="mt-2 flex min-h-4 items-center justify-between gap-2">
-              <p aria-live="polite" className="text-[10.5px] text-ink-faint">{emailNotice}</p>
-              {email && (
-                <button
-                  type="button"
-                  disabled={emailSaving}
-                  onClick={() => void removeEmail()}
-                  className="shrink-0 text-[10.5px] text-ink-faint hover:text-red-600 disabled:opacity-50"
-                >
-                  清除绑定
-                </button>
-              )}
-            </div>
-          </div>
         </Section>
 
         <div className="mx-4 border-t border-line/70" />
@@ -303,6 +208,33 @@ export default function RightRail({ refreshToken }: RailProps) {
               </div>
             );
           })}
+        </Section>
+
+        <div className="mx-4 border-t border-line/70" />
+
+        <Section title="定时提醒" empty="暂无定时提醒">
+          {(reminders ?? []).map((r) => (
+            <div key={r.id} className="group flex items-start gap-2 rounded-lg bg-white px-3 py-2 shadow-[0_1px_0_rgba(20,21,23,.04)]">
+              <div className="min-w-0 flex-1">
+                <p className="text-[12.5px] leading-snug text-ink">⏰ {r.content}</p>
+                <p className="mt-0.5 font-mono text-[10.5px] tabular-nums text-ink-faint">
+                  {r.nextExecuteTime || r.executeTime}
+                  {r.repeatType && r.repeatType !== 'NONE' && r.repeatType !== 'ONCE' ? ' · ' + r.repeatType : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleCancelReminder(r.id)}
+                className="shrink-0 rounded-md p-1 text-ink-soft transition-all hover:bg-red-50 hover:text-red-600"
+                aria-label="删除提醒"
+                title="删除提醒"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ))}
         </Section>
 
         <div className="mx-4 border-t border-line/70" />

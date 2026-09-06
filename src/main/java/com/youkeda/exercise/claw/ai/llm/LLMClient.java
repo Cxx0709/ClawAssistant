@@ -441,8 +441,16 @@ public class LLMClient {
 
         Duration idleTimeout = Duration.ofSeconds(
                 Math.max(1, properties.getStreamIdleTimeoutSeconds()));
+        // 流式总时长上限：推理模型持续输出 token 会使空闲超时永不触发，
+        // 必须加总时长上限防止调用无限挂起。
+        long streamStartMs = System.currentTimeMillis();
+        Duration totalTimeout = Duration.ofSeconds(TIMEOUT_SECONDS * 3L);
         try (StreamLineReader reader = new StreamLineReader(response.body())) {
             while (true) {
+                if (System.currentTimeMillis() - streamStartMs > totalTimeout.toMillis()) {
+                    throw new java.net.http.HttpTimeoutException(
+                            "LLM 流式响应总时长超过 " + totalTimeout.toSeconds() + " 秒，已中止");
+                }
                 String line = reader.readLine(idleTimeout);
                 if (line == null) {
                     break;
@@ -708,6 +716,8 @@ public class LLMClient {
                                               boolean stream) throws Exception {
         ObjectNode root = objectMapper.createObjectNode();
         root.put("model", properties.getModel());
+        // 关闭推理（thinking），加速工具调用决策；推理模型默认会输出大量思考过程，拖慢响应。
+        root.put("enable_thinking", false);
         if (stream) {
             root.put("stream", true);
         }

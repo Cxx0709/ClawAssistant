@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import BrandMark from '../components/BrandMark';
 import Markdown from '../components/Markdown';
 import RightRail from '../components/RightRail';
@@ -61,6 +61,7 @@ export default function ChatPage({ onHome, user, onLogout, onGoRoles }: {
   const historyConversationRef = useRef<string | null>(null);
   const [railOpen, setRailOpen] = useState(false);
   const [railToken, setRailToken] = useState(0);
+  const [railWidth, setRailWidth] = useState(340);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null);
   const [fileGeneration, setFileGeneration] = useState<{ active: boolean; startedAt: number }>({
@@ -837,6 +838,28 @@ export default function ChatPage({ onHome, user, onLogout, onGoRoles }: {
 
   const connected = status?.appReady;
 
+  // 拖拽调整右侧信息面板宽度
+  const onRailDividerDrag = (e: ReactMouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = railWidth;
+    const onMove = (ev: MouseEvent) => {
+      const delta = startX - ev.clientX;
+      const next = Math.min(520, Math.max(240, startWidth + delta));
+      setRailWidth(next);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
   return (
     <>
     <div ref={chatRootRef} aria-hidden={radarOpen || undefined} className="flex h-dvh flex-col bg-canvas text-ink">
@@ -1133,14 +1156,22 @@ export default function ChatPage({ onHome, user, onLogout, onGoRoles }: {
           </div>
         </main>
 
-        {/* 右侧信息抽屉（宽屏占位 / 窄屏悬浮） */}
+        {/* 右侧信息抽屉（宽屏占位 + 可拖拽分隔条 / 窄屏悬浮） */}
         {railOpen && (
           <>
             <div
               className="fixed inset-0 z-30 bg-ink/20 backdrop-blur-[1px] lg:hidden"
               onClick={() => setRailOpen(false)}
             />
-            <div className="fixed inset-y-0 right-0 z-40 w-[85vw] max-w-[340px] shadow-[-8px_0_30px_-18px_rgba(20,21,23,.25)] lg:static lg:z-auto lg:w-auto lg:max-w-none lg:shrink-0 lg:shadow-none">
+            <div
+              onMouseDown={onRailDividerDrag}
+              className="hidden w-1.5 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-brand/30 lg:block"
+              title="拖拽调整宽度"
+            />
+            <div
+              className="fixed inset-y-0 right-0 z-40 w-[85vw] max-w-[340px] shadow-[-8px_0_30px_-18px_rgba(20,21,23,.25)] lg:static lg:z-auto lg:max-w-none lg:shrink-0 lg:shadow-none"
+              style={{ width: railWidth }}
+            >
               <RightRail refreshToken={railToken} />
             </div>
           </>

@@ -138,6 +138,7 @@ public class ExecutionLoop {
         Map<String, ResultStatus> toolStatuses = new HashMap<>();
         boolean forceTextResponse = false;
         int blankTextResponses = 0;
+        int guardRejects = 0;
         PlanState planState = initialPlanState;
         int totalToolCalls = 0;
 
@@ -254,12 +255,17 @@ public class ExecutionLoop {
                 SkillReplyGuard.GuardResult guardResult = replyGuardRegistry.validate(
                         activeSkillName, userMessage, reply, session, executedCalls, toolStatuses);
                 if (!guardResult.allowed()) {
-                    log.warn("Skill 回复守卫阻止文本结束 | skill={} | correction={}",
-                            activeSkillName, guardResult.correction());
-                    messages.add(new Message("system",
-                            Objects.requireNonNull(guardResult.correction(),
-                                    "guard correction must not be null")));
-                    continue;
+                    guardRejects++;
+                    if (guardRejects >= 3) {
+                        log.warn("Skill 回复守卫连续拒绝 {} 次，强制放行 | skill={}", guardRejects, activeSkillName);
+                    } else {
+                        log.warn("Skill 回复守卫阻止文本结束 | skill={} | correction={}",
+                                activeSkillName, guardResult.correction());
+                        messages.add(new Message("system",
+                                Objects.requireNonNull(guardResult.correction(),
+                                        "guard correction must not be null")));
+                        continue;
+                    }
                 }
 
                 log.info("LLM 直接回复 | reply={}", reply);

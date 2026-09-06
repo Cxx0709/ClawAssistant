@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+﻿import { useEffect, useState, useRef } from 'react';
 import BrandMark from '../components/BrandMark';
 import { apiFetch, createRole, deleteRole, fetchRoles, updateRole, createConversation, synthesizeRoleVoice } from '../lib/api';
 import type { AiRole } from '../lib/types';
@@ -342,12 +342,13 @@ export default function RolesPage({ onBack }: { onBack: () => void }) {
                     <label className={label}>选择预设音色</label>
                     <select className={input} value={voiceId} onChange={e => setVoiceId(e.target.value)}>
                       <option value="">不使用</option>
+                      <option value="longniuniu_v3">阳光男童声</option>
+                      <option value="longhuhu_v3">天真女童</option>
                       <option value="longanyang">阳光大男孩</option>
                       <option value="longanhuan_v3">欢脱元气女</option>
-                      <option value="longhuhu_v3">天真烂漫女童</option>
-                      <option value="longxian_v3">豪放可爱少女</option>
-                      <option value="longling_v3">稚气呆板女童</option>
-                      <option value="longniuniu_v3">阳光男童声</option>
+                      <option value="longlaotie_v3">东北大叔</option>
+                      <option value="longyingmu_v3">优雅知性女</option>
+                      <option value="longlaobo_v3">沧桑老爷爷</option>
                     </select>
                   </div>
 
@@ -358,7 +359,7 @@ export default function RolesPage({ onBack }: { onBack: () => void }) {
                         <span className="text-sm font-medium text-[#6c5ce7]">声音定制</span>
                       </div>
                       <p className="mb-3 text-xs text-ink-faint">
-                        上方选择预设音色后，AI 就会用该音色说话。也可以上传声音样本进行存档。
+                        选择预设音色后，AI 就会用对应音色说话。选择"不使用"时，将默认使用亲切的奶奶音色。也可以上传声音样本进行存档。
                       </p>
                       <div className="flex items-center gap-2">
                         <input

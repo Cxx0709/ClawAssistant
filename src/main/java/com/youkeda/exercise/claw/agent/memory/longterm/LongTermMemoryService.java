@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import com.youkeda.exercise.claw.identity.UserExecutionContext;
+import com.youkeda.exercise.claw.identity.UserProfileRepository;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 
@@ -39,6 +40,7 @@ public class LongTermMemoryService {
     private final Executor memoryTaskExecutor;
     private final UserExecutionContext userContext;
     private final MemoryChangeStore changes;
+    private final UserProfileRepository profiles;
 
     public LongTermMemoryService(LongTermMemoryProperties props,
                                   MemoryExtractor extractor,
@@ -49,7 +51,8 @@ public class LongTermMemoryService {
                                   MemoryWriteCoordinator writeCoordinator,
                                   MemoryEvictionService evictionService,
                                   @Qualifier("memoryTaskExecutor") Executor memoryTaskExecutor,
-                                  UserExecutionContext userContext, MemoryChangeStore changes) {
+                                  UserExecutionContext userContext, MemoryChangeStore changes,
+                                  UserProfileRepository profiles) {
         this.props = props;
         this.extractor = extractor;
         this.embeddingClient = embeddingClient;
@@ -61,6 +64,7 @@ public class LongTermMemoryService {
         this.memoryTaskExecutor = memoryTaskExecutor;
         this.userContext = userContext;
         this.changes = changes;
+        this.profiles = profiles;
     }
 
     // ==================== Recall：根据当前消息召回相关记忆 ====================
@@ -110,6 +114,27 @@ public class LongTermMemoryService {
      * @param userMessage   用户消息
      * @param assistantReply 助手回复
      */
+    /**
+     * 从用户消息中同步提取邮箱并绑定到用户资料。
+     * 必须在 Agent 工具调用之前执行，避免定时任务邮箱校验时邮箱尚未绑定的竞态问题。
+     */
+    public void bindEmailFromMessage(String userId, String userMessage) {
+        if (userId == null || userId.isBlank() || userMessage == null) return;
+        try {
+            Matcher m = EMAIL_PATTERN.matcher(userMessage);
+            if (m.find()) {
+                String email = m.group();
+                String existing = profiles.getEmail(userId);
+                if (existing == null || existing.isBlank() || !existing.equalsIgnoreCase(email)) {
+                    profiles.setEmail(userId, email);
+                    log.info("从用户消息同步绑定邮箱 | userId={} | email={}", userId, email);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("同步绑定邮箱失败 | error={}", e.getMessage());
+        }
+    }
+
     public void processAndStore(String userMessage, String assistantReply) {
         processAndStore(userMessage, assistantReply, null);
     }
@@ -134,6 +159,25 @@ public class LongTermMemoryService {
         // 消息太短，跳过提取
         if (userMessage == null || userMessage.length() < props.getMinExtractLength()) {
             return;
+        }
+
+        // 快速结构化提取：用户消息中出现邮箱地址时，自动绑定到用户资料，
+        // 供定时任务邮件通知校验使用，不依赖 LLM 提取结果。
+        try {
+            String userId = userContext.currentUserIdOrNull();
+            if (userId != null && !userId.isBlank()) {
+                Matcher m = EMAIL_PATTERN.matcher(userMessage);
+                if (m.find()) {
+                    String email = m.group();
+                    String existing = profiles.getEmail(userId);
+                    if (existing == null || existing.isBlank() || !existing.equalsIgnoreCase(email)) {
+                        profiles.setEmail(userId, email);
+                        log.info("从用户消息自动绑定邮箱 | userId={} | email={}", userId, email);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("自动绑定邮箱失败 | error={}", e.getMessage());
         }
 
         try {

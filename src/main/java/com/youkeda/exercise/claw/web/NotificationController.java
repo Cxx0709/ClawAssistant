@@ -5,6 +5,7 @@ import com.youkeda.exercise.claw.notification.DatabaseNotificationSink;
 import com.youkeda.exercise.claw.notification.NotificationRecord;
 import com.youkeda.exercise.claw.notification.NotificationStreamService;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -51,6 +52,11 @@ public class NotificationController {
     @PostMapping("/read-all")
     public Map<String, Integer> markAllRead(Authentication authentication) {
         return Map.of("updated", notifications.markAllRead(authenticatedUser.require(authentication).id()));
+    }
+
+    @DeleteMapping("/{id}")
+    public Map<String, Boolean> delete(Authentication authentication, @PathVariable long id) {
+        return Map.of("deleted", notifications.delete(authenticatedUser.require(authentication).id(), id));
     }
 
     @GetMapping(value = "/stream", produces = "text/event-stream")

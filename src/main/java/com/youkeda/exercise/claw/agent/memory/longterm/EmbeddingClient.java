@@ -24,6 +24,7 @@ public class EmbeddingClient {
 
     private static final Logger log = LoggerFactory.getLogger(EmbeddingClient.class);
     private static final Duration HEALTH_CHECK_TIMEOUT = Duration.ofSeconds(5);
+    private static final int MAX_BATCH_SIZE = 10;
 
     enum CircuitState { CLOSED, OPEN, HALF_OPEN }
 
@@ -104,6 +105,18 @@ public class EmbeddingClient {
         if (texts.stream().anyMatch(text -> text == null || text.isBlank())) {
             throw new IllegalArgumentException("Embedding text must not be blank");
         }
+        if (texts.size() <= MAX_BATCH_SIZE) {
+            return doEmbedBatch(texts);
+        }
+        List<float[]> all = new ArrayList<>();
+        for (int i = 0; i < texts.size(); i += MAX_BATCH_SIZE) {
+            int end = Math.min(i + MAX_BATCH_SIZE, texts.size());
+            all.addAll(doEmbedBatch(texts.subList(i, end)));
+        }
+        return all;
+    }
+
+    private List<float[]> doEmbedBatch(List<String> texts) {
         beforeRequest();
 
         try {
