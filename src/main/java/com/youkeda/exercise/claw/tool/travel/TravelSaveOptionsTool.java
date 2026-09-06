@@ -39,8 +39,8 @@ public class TravelSaveOptionsTool extends AbstractTool {
     @Override
     public String getDescription() {
         return "保存已生成的候选旅游方案。"
-                + "当已有一个或多个完整的差异化方案，需要进入比较和选择阶段时调用。"
-                + "用户未指定数量时默认生成3个方案，明确指定时按指定数量生成，最多5个。"
+                + "当已有完整的差异化方案，需要进入比较和选择阶段时调用。"
+                + "用户未指定数量时必须生成并保存3个方案，明确指定时按指定数量生成，最多5个。"
                 + "调用前应先生成各方案的行程和费用项目，调用后再用 budget_calculator 核算总费用。";
     }
 

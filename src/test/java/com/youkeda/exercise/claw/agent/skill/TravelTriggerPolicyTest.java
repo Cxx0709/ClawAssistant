@@ -34,6 +34,24 @@ class TravelTriggerPolicyTest {
     }
 
     @Test
+    void continuesActiveTravelWhenUserOnlyAddsPlanFields() {
+        SkillSession session = SkillSession.create("u").withActiveSkill("travel");
+        SkillTriggerMatch m = policy.match("从淮南出发 2人 下周三出发 总预算1000",
+                Optional.of(session));
+        assertTrue(m.matched());
+        assertTrue(m.continuation());
+        assertEquals(0.92, m.confidence(), 0.01);
+    }
+
+    @Test
+    void continuesActiveTravelWhenUserSelectsAnOption() {
+        SkillSession session = SkillSession.create("u").withActiveSkill("travel");
+        SkillTriggerMatch m = policy.match("选方案B", Optional.of(session));
+        assertTrue(m.matched());
+        assertTrue(m.continuation());
+    }
+
+    @Test
     void ignoresKnowledgeQuestion() {
         SkillTriggerMatch m = policy.match("旅游是什么意思", Optional.empty());
         assertFalse(m.matched(), "知识性问题不应触发 travel");

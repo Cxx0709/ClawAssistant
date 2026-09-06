@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.regex.Matcher;
@@ -110,7 +111,25 @@ public class LongTermMemoryService {
      * @param assistantReply 助手回复
      */
     public void processAndStore(String userMessage, String assistantReply) {
+        processAndStore(userMessage, assistantReply, null);
+    }
+
+    /**
+     * 处理一轮对话，并按当前技能决定是否允许自动提取长期记忆。
+     * 旅行方案字段已经由旅行业务存储管理，不应重复进入长期记忆。
+     */
+    public void processAndStore(String userMessage, String assistantReply, String activeSkillName) {
+        processAndStore(userMessage, assistantReply, activeSkillName, Set.of());
+    }
+
+    public void processAndStore(String userMessage, String assistantReply,
+                                String activeSkillName, Set<String> executedToolNames) {
         if (!props.isEnabled()) return;
+        MemoryPolicy policy = MemoryPolicy.forSkill(activeSkillName);
+        if (!policy.allowsAutoExtract() || MemoryPolicy.hasOneShotTool(executedToolNames)) {
+            log.debug("当前技能跳过自动长期记忆提取 | skill={}", activeSkillName);
+            return;
+        }
 
         // 消息太短，跳过提取
         if (userMessage == null || userMessage.length() < props.getMinExtractLength()) {
@@ -166,10 +185,27 @@ public class LongTermMemoryService {
     /** Queues extraction without using the JVM-wide common pool. */
     public boolean processAndStoreAsync(
             String userMessage, String assistantReply) {
+        return processAndStoreAsync(userMessage, assistantReply, null);
+    }
+
+    /** Queues extraction only when the current skill allows automatic extraction. */
+    public boolean processAndStoreAsync(
+            String userMessage, String assistantReply, String activeSkillName) {
+        return processAndStoreAsync(userMessage, assistantReply, activeSkillName, Set.of());
+    }
+
+    public boolean processAndStoreAsync(
+            String userMessage, String assistantReply, String activeSkillName,
+            Set<String> executedToolNames) {
         if (!props.isEnabled()) return false;
+        MemoryPolicy policy = MemoryPolicy.forSkill(activeSkillName);
+        if (!policy.allowsAutoExtract() || MemoryPolicy.hasOneShotTool(executedToolNames)) {
+            log.debug("当前技能跳过自动长期记忆提取 | skill={}", activeSkillName);
+            return false;
+        }
         try {
             memoryTaskExecutor.execute(
-                    () -> processAndStore(userMessage, assistantReply));
+                    () -> processAndStore(userMessage, assistantReply, activeSkillName, executedToolNames));
             return true;
         } catch (RejectedExecutionException e) {
             log.warn("记忆任务队列已满，本轮跳过");

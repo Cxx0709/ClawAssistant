@@ -25,11 +25,11 @@ export default {
         ],
       },
       colors: {
-        // ChatGPT 极简调色：中性近黑文字 + hairline 分隔 + 单绿点缀
+        // 知行品牌：墨蓝文字 + 靛紫主色 + 青色强调
         ink: { DEFAULT: '#141517', soft: '#5c6470', faint: '#9aa1ac' },
         line: { DEFAULT: '#e7e9ec', soft: '#eef0f3' },
         canvas: { DEFAULT: '#ffffff', sub: '#fafafb' },
-        brand: { DEFAULT: '#5B5BD6', deep: '#4540b0', dim: '#EDEDFB' },  // 紫色（Agent动作与身份）
+        brand: { DEFAULT: '#4F46E5', deep: '#1E1B4B', dim: '#EEF2FF' },
         ok: { DEFAULT: '#1E9E7A', dim: '#E3F4EE' },                     // 绿色（完成/新增/正常）
         warn: { DEFAULT: '#B97A14', dim: '#FBF0DB' },                   // 琥珀色（待用户决策）
         bubble: '#eef0f2',
@@ -40,6 +40,9 @@ export default {
       boxShadow: {
         composer: '0 0 0 1px rgba(20,21,23,.05), 0 4px 20px rgba(20,21,23,.05)',
         pop: '0 10px 40px -12px rgba(20,21,23,.18)',
+      },
+      backgroundImage: {
+        'brand-gradient': 'linear-gradient(135deg, #4F46E5 0%, #8B5CF6 55%, #22D3EE 100%)',
       },
       keyframes: {
         blink: {

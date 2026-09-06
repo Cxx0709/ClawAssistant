@@ -4,16 +4,21 @@ import com.youkeda.exercise.claw.feature.travel.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.youkeda.exercise.claw.agent.runtime.AbstractTool;
 import com.youkeda.exercise.claw.agent.runtime.ToolExecutionContext;
 import com.youkeda.exercise.claw.agent.runtime.ToolRegistry;
 import com.youkeda.exercise.claw.feature.budget.BatchPlanCostRequest;
 import com.youkeda.exercise.claw.feature.budget.BudgetCalculatorService;
+import com.youkeda.exercise.claw.feature.budget.PricingMode;
 import org.springframework.stereotype.Component;
 
 /** 将旅游方案成本核算注册为可供 LLM 调用的独立工具。 */
 @Component
 public class TravelCalculateCostTool extends AbstractTool {
+
+    private static final String PRICING_MODE_DESCRIPTION =
+            "计费方式，只能使用枚举值";
 
     private final BudgetCalculatorService calculatorService;
 
@@ -56,7 +61,7 @@ public class TravelCalculateCostTool extends AbstractTool {
                     .array("items", "该方案的费用项目", true)
                         .string("category", "TRANSPORT、ACCOMMODATION、MEAL、TICKET、ACTIVITY、INSURANCE、MATERIAL、VENUE、SERVICE 或 OTHER", true)
                         .string("item_name", "具体费用项目名称", true)
-                        .string("pricing_mode", "FIXED、PER_PERSON、PER_PERSON_PER_DAY、PER_PERSON_PER_OCCURRENCE、PER_ROOM_PER_NIGHT、PER_VEHICLE、PER_TABLE 或 PER_UNIT", true)
+                        .raw("pricing_mode", pricingModeSchema(), true)
                         .number("unit_price", "确定单价；有价格区间时不填写", false)
                         .number("min_unit_price", "最低参考单价", false)
                         .number("max_unit_price", "最高参考单价", false)
@@ -70,6 +75,15 @@ public class TravelCalculateCostTool extends AbstractTool {
                         .end()
                     .end()
                 .build();
+    }
+
+    private ObjectNode pricingModeSchema() {
+        ObjectNode property = objectMapper.createObjectNode();
+        property.put("type", "string");
+        property.put("description", PRICING_MODE_DESCRIPTION);
+        ArrayNode values = property.putArray("enum");
+        for (PricingMode mode : PricingMode.values()) values.add(mode.name());
+        return property;
     }
 
     @Override

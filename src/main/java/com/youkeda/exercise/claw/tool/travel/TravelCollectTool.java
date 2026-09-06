@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
  * 旅游需求收集工具。
  *
  * <p>当用户需要制定旅游/出游方案且缺少关键信息（出发地、人数、日期、天数、目的地、预算）时调用。
- * 信息不足时返回 NEED_MORE_INFORMATION 和具体缺失字段，LLM 应据此追问。
+     * 信息不足时返回 NEED_MORE_INFORMATION 和具体缺失字段，LLM 应一次性询问全部缺失的硬性必填项。
  */
 @Component
 public class TravelCollectTool extends AbstractTool {
@@ -42,7 +42,7 @@ public class TravelCollectTool extends AbstractTool {
         return "收集和更新旅游规划需求。"
                 + "当用户需要制定旅游、公司出游、部门活动、集体旅行或完整多人行程方案时调用。"
                 + "传入用户已提供的信息（出发地、人数、日期、天数、目的地/范围、预算等）；"
-                + "必要字段缺失时返回 NEED_MORE_INFORMATION 和缺失字段列表，LLM 应逐一追问。"
+                + "必要字段缺失时返回 NEED_MORE_INFORMATION 和缺失字段列表，LLM 应一次性询问全部缺失的硬性必填项。"
                 + "新方案首次调用前，若明显缺少必填信息（缺3项以上），应先用文字一次性追问，不调用此工具。"
                 + "已有方案状态时，用此工具记录用户补充或修改的信息。"
                 + "普通景点问答和简单地点推荐不调用。";

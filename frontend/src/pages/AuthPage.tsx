@@ -40,8 +40,8 @@ export default function AuthPage({ setupRequired, onAuthenticated }: AuthPagePro
         <div className="flex items-center gap-3">
           <BrandMark size={42} />
           <div>
-            <h1 className="text-lg font-semibold tracking-tight">Claw Assistant</h1>
-            <p className="text-xs text-ink-faint">你的私人 Web 智能助理</p>
+            <h1 className="text-lg font-semibold tracking-tight">知行</h1>
+            <p className="text-xs text-ink-faint">ZHIXING · AGENT · 你的私人 Web 智能助理</p>
           </div>
         </div>
 
