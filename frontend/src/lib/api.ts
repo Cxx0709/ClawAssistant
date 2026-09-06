@@ -9,6 +9,7 @@ import type {
   ScheduledTaskItem,
   SystemStatus,
   Conversation,
+  AiRole,
   HistoryMessage,
   ConversationPage,
   MessagePage,
@@ -174,10 +175,80 @@ export async function fetchConversations(archived = false): Promise<Conversation
   return (await fetchConversationPage({ archived, limit: 100 })).items;
 }
 
-export async function createConversation(): Promise<Conversation> {
-  const res = await apiFetch('/api/webchat/conversations', { method: 'POST' });
+export async function createConversation(roleId?: string): Promise<Conversation> {
+  const body = roleId ? JSON.stringify({ roleId }) : undefined;
+  const res = await apiFetch('/api/webchat/conversations', {
+    method: 'POST',
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body,
+  });
   if (!res.ok) throw new Error((await readError(res)) || '新建对话失败');
   return (await res.json()) as Conversation;
+}
+
+export async function updateConversationRole(conversationId: string, roleId: string | null): Promise<Conversation> {
+  const res = await apiFetch(`/api/webchat/conversations/${encodeURIComponent(conversationId)}/role`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ roleId }),
+  });
+  if (!res.ok) throw new Error((await readError(res)) || '更新角色失败');
+  return (await res.json()) as Conversation;
+}
+
+// ===== AI 角色相关 API =====
+export async function fetchRoles(): Promise<AiRole[]> {
+  return getJson<AiRole[]>('/api/roles');
+}
+
+export async function createRole(data: {
+  name: string;
+  avatar?: string;
+  personality?: string;
+  background?: string;
+  speakingStyle?: string;
+  catchphrase?: string;
+}): Promise<AiRole> {
+  const res = await apiFetch('/api/roles', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error((await readError(res)) || '创建角色失败');
+  return (await res.json()) as AiRole;
+}
+
+export async function updateRole(id: string, data: {
+  name: string;
+  avatar?: string;
+  personality?: string;
+  background?: string;
+  speakingStyle?: string;
+  catchphrase?: string;
+}): Promise<AiRole> {
+  const res = await apiFetch(`/api/roles/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error((await readError(res)) || '更新角色失败');
+  return (await res.json()) as AiRole;
+}
+
+export async function deleteRole(id: string): Promise<void> {
+  const res = await apiFetch(`/api/roles/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error((await readError(res)) || '删除角色失败');
+}
+
+/** 用角色的声音合成语音（TTS），返回音频 blob */
+export async function synthesizeRoleVoice(roleId: string, text: string): Promise<Blob> {
+  const res = await apiFetch(`/api/roles/${encodeURIComponent(roleId)}/tts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error((await readError(res)) || '语音合成失败');
+  return await res.blob();
 }
 
 export async function fetchConversationMessages(id: string, before?: string): Promise<MessagePage> {

@@ -65,6 +65,7 @@ public class SqliteDatabaseInitializer {
         addColumn("conversations", "last_message_at", "INTEGER");
         addColumn("conversations", "metadata_updated_at", "INTEGER");
         addColumn("conversations", "deleted_at", "INTEGER");
+        addColumn("conversations", "role_id", "TEXT");
         jdbcTemplate.update("""
             UPDATE conversations
             SET last_message_at = COALESCE(last_message_at, updated_at),

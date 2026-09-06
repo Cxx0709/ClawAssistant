@@ -139,9 +139,23 @@ public class WebChatController {
     }
 
     @PostMapping("/conversations")
-    public Conversation createConversation(Authentication authentication) {
-        return conversationService.create(authenticatedUser.require(authentication).id());
+    public Conversation createConversation(Authentication authentication,
+                                            @RequestBody(required = false) CreateConversationRequest request) {
+        String userId = authenticatedUser.require(authentication).id();
+        String roleId = request != null ? request.roleId() : null;
+        return conversationService.create(userId, roleId);
     }
+
+    @PatchMapping("/conversations/{id}/role")
+    public Conversation updateConversationRole(Authentication authentication,
+                                                @PathVariable String id,
+                                                @RequestBody UpdateRoleRequest request) {
+        String userId = authenticatedUser.require(authentication).id();
+        return conversationService.updateRole(userId, id, request.roleId());
+    }
+
+    public record CreateConversationRequest(String roleId) {}
+    public record UpdateRoleRequest(String roleId) {}
 
     @GetMapping("/conversations/{id}/messages")
     public MessagePage conversationMessages(
