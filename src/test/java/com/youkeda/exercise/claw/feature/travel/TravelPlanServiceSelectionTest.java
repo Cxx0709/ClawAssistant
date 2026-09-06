@@ -60,6 +60,12 @@ class TravelPlanServiceSelectionTest {
             selectByOrdinal.put("selected_option_id", "第二个");
             assertEquals("plan_b", service.handle(selectByOrdinal)
                     .path("selected_option_id").asText());
+
+            ObjectNode selectByModelAlias = objectMapper.createObjectNode();
+            selectByModelAlias.put("action", "select_option");
+            selectByModelAlias.put("option_id", "plan_b");
+            assertEquals("plan_b", service.handle(selectByModelAlias)
+                    .path("selected_option_id").asText());
         }
     }
 

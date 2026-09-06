@@ -140,6 +140,7 @@ public class ExecutionLoop {
         int blankTextResponses = 0;
         PlanState planState = initialPlanState;
         int totalToolCalls = 0;
+        boolean weatherFallbackEligible = false;
 
         for (int round = 0; round < maxRounds; round++) {
             log.info("工具调用循环第 {} 轮 | messages={}", round + 1, messages.size());
@@ -151,9 +152,15 @@ public class ExecutionLoop {
                 forceTextResponse = true;
             }
 
-            List<ToolDefinition> roundTools = forceTextResponse ? List.of() : tools;
+            List<ToolDefinition> roundTools = forceTextResponse
+                    ? List.of()
+                    : filterFallbackTools(tools, activeSkillName, weatherFallbackEligible);
+            // Buffer each round locally. A round may return both visible text and tool calls;
+            // that text is provisional and must not reach the client before the round is accepted.
+            StringBuilder roundContent = contentSink == null ? null : new StringBuilder();
             LLMResponse response = contentSink != null
-                    ? llmClient.chatWithToolsStreaming(systemPrompt, messages, roundTools, contentSink)
+                    ? llmClient.chatWithToolsStreaming(systemPrompt, messages, roundTools,
+                            roundContent::append)
                     : llmClient.chatWithTools(systemPrompt, messages, roundTools);
             forceTextResponse = false;
 
@@ -172,8 +179,10 @@ public class ExecutionLoop {
                 }
                 if (!roundTools.isEmpty()) {
                     log.warn("本轮带工具的 LLM 调用失败，降级不带工具重试（下一轮恢复工具）");
+                    roundContent = contentSink == null ? null : new StringBuilder();
                     response = contentSink != null
-                            ? llmClient.chatWithToolsStreaming(systemPrompt, messages, List.of(), contentSink)
+                            ? llmClient.chatWithToolsStreaming(systemPrompt, messages, List.of(),
+                                    roundContent::append)
                             : llmClient.chatWithTools(messages, List.of());
                 }
                 if (response == null) {
@@ -264,6 +273,8 @@ public class ExecutionLoop {
 
                 log.info("LLM 直接回复 | reply={}", reply);
 
+                if (contentSink != null) contentSink.accept(reply);
+
                 logAgentLoop(round + 1, activeSkillName, tools.size(),
                         "text", List.of(), List.of(),
                         totalToolCalls, maxTotalToolCalls);
@@ -314,11 +325,35 @@ public class ExecutionLoop {
             batch.toolStatuses().forEach((toolName, status) -> {
                 if (status == ResultStatus.FAILED) failedTools.add(toolName);
             });
+            if ("weather".equals(activeSkillName)
+                    && toolCalls.stream().anyMatch(call -> "weather_query".equals(call.name()))) {
+                weatherFallbackEligible = batch.results().stream()
+                        .anyMatch(this::requiresWebSearchFallback);
+            }
         }
 
         // 达到局部上限
         log.warn("工具调用循环达到上限 {} 轮", maxRounds);
         return Result.maxRounds(messages, planState, session);
+    }
+
+    private List<ToolDefinition> filterFallbackTools(List<ToolDefinition> tools,
+                                                       String activeSkillName,
+                                                       boolean weatherFallbackEligible) {
+        if (!"weather".equals(activeSkillName) || weatherFallbackEligible) return tools;
+        return tools.stream().filter(tool -> !"web_search".equals(tool.name())).toList();
+    }
+
+    private boolean requiresWebSearchFallback(String result) {
+        if (result == null || result.isBlank()) return false;
+        try {
+            JsonNode node = objectMapper.readTree(result);
+            return node.path("fallback_required").asBoolean(false)
+                    || "UNAVAILABLE".equalsIgnoreCase(node.path("status").asText())
+                    || "ERROR".equalsIgnoreCase(node.path("status").asText());
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     /**
@@ -384,10 +419,11 @@ public class ExecutionLoop {
                         + "若信息不足，提出一个明确问题让用户补充；"
                         + "若信息已齐全，给出当前结果；缺失信息标记待确认，不得编造。"));
         LLMResponse response = contentSink != null
-                ? llmClient.chatWithToolsStreaming(systemPrompt, finalMessages, List.of(), contentSink)
+                ? llmClient.chatWithToolsStreaming(systemPrompt, finalMessages, List.of(), ignored -> { })
                 : llmClient.chatWithTools(systemPrompt, finalMessages, List.of());
         if (response != null && response.getContent() != null
                 && !response.getContent().isBlank()) {
+            if (contentSink != null) contentSink.accept(response.getContent());
             return response.getContent();
         }
         log.warn("最终汇总仍返回工具调用，使用兜底消息");

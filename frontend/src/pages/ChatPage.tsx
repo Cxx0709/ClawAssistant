@@ -37,10 +37,10 @@ import { consumeStream } from '../lib/sse';
 import type { AiRole, AppUser, Artifact, ChatMsg, Conversation, PendingToolInfo, StreamEvent, SystemStatus, ToolItem } from '../lib/types';
 
 const SUGGESTIONS = [
-  '帮我规划一趟周末杭州两日游',
-  '我今天心情有点烦，能聊聊吗',
+  '帮我导入并查询今天的课表',
+  '规划杭州周末游，比较交通并查天气',
+  '把这份文件整理成一页笔记',
   '帮我创建一个「每周跑步 3 次」的目标',
-  '记住：咖啡只喝中杯',
 ];
 
 export default function ChatPage({ onHome, user, onLogout, onGoRoles }: {
@@ -664,7 +664,9 @@ export default function ChatPage({ onHome, user, onLogout, onGoRoles }: {
           break;
         case 'done': {
           const buffered = takeBufferedText();
-          const generatedFile = (evt.artifacts ?? []).find((artifact) => artifact.kind === 'FILE');
+          const generatedArtifact = (evt.artifacts ?? []).find(
+            (artifact) => artifact.kind === 'FILE' || artifact.kind === 'IMAGE',
+          );
           setFileGeneration((state) => ({ ...state, active: false }));
           // done 携带全文，以它为最终兜底（流式丢字也不漏）
           patchStream((m) => ({
@@ -675,8 +677,8 @@ export default function ChatPage({ onHome, user, onLogout, onGoRoles }: {
             status: 'COMPLETED',
             artifacts: evt.artifacts ?? [],
           }));
-          if (generatedFile) {
-            setFocusedArtifactId(generatedFile.id);
+          if (generatedArtifact) {
+            setFocusedArtifactId(generatedArtifact.id);
             setRailOpen(false);
             setWorkspaceOpen(true);
           }
@@ -1210,13 +1212,31 @@ function HistorySkeleton() {
 
 function EmptyState({ onPick }: { onPick: (s: string) => void }) {
   return (
-    <div className="flex flex-col items-center pt-[14vh] text-center">
+    <div className="flex flex-col items-center pt-[12vh] text-center">
       <BrandMark size={56} />
-      <h1 className="mt-5 text-xl font-semibold tracking-tight">今天想让我帮你做点什么？</h1>
-      <p className="mt-1.5 text-sm text-ink-soft">
-        会记忆、会规划、会主动跟进目标，也能读写图片、语音和文件
+      <h1 className="mt-5 text-xl font-semibold tracking-tight">你好，我是知行</h1>
+      <p className="mt-2 max-w-xl text-sm leading-6 text-ink-soft">
+        会记住你的偏好，帮你规划、执行，并在需要时主动提醒
       </p>
-      <div className="mt-8 flex w-full max-w-[520px] flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:justify-center">
+
+      <div className="mt-7 grid w-full max-w-[560px] gap-2 text-left sm:grid-cols-2">
+        {[
+          ['📚', '学习与成长', '课表、考试、目标、提醒'],
+          ['🗺️', '出行与生活', '天气、路线、交通、旅行和预算'],
+          ['📄', '文件与创作', '读写文件、生成文档、图片和语音'],
+          ['🧠', '记忆与执行', '长期记忆、定时任务、通知和跟进'],
+        ].map(([icon, title, desc]) => (
+          <div key={title} className="rounded-xl border border-line bg-white px-3.5 py-3">
+            <div className="text-[13px] font-medium text-ink">
+              <span className="mr-1.5">{icon}</span>
+              {title}
+            </div>
+            <div className="mt-1 text-[12.5px] leading-5 text-ink-soft">{desc}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-7 flex w-full max-w-[520px] flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:justify-center">
         {SUGGESTIONS.map((s) => (
           <button
             key={s}

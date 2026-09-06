@@ -247,7 +247,10 @@ public class SkillRouter {
                 boolean matched = skillKeywords.stream().anyMatch(message::contains);
                 if (matched) {
                     // Topic keywords nominate candidates; they do not establish a task.
-                    matches.add(new SkillMatchResult(skill.name(), 0.65, skill.priority()));
+                    // 明确的领域关键词应直接激活对应 Skill；否则会被 0.8 的
+                    // NEW_TRIGGER_MIN_CONFIDENCE 门槛拦下并交给 LLM 二次分类，
+                    // 导致“天气”请求落到 common。
+                    matches.add(new SkillMatchResult(skill.name(), 0.85, skill.priority()));
                 }
             } else {
                 // Custom trigger policy (e.g. TransportTriggerPolicy)

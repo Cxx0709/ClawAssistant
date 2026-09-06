@@ -52,6 +52,14 @@ class TravelTriggerPolicyTest {
     }
 
     @Test
+    void continuesActiveTravelWhenUserSaysBareOptionName() {
+        SkillSession session = SkillSession.create("u").withActiveSkill("travel");
+        SkillTriggerMatch m = policy.match("方案B", Optional.of(session));
+        assertTrue(m.matched());
+        assertTrue(m.continuation());
+    }
+
+    @Test
     void ignoresKnowledgeQuestion() {
         SkillTriggerMatch m = policy.match("旅游是什么意思", Optional.empty());
         assertFalse(m.matched(), "知识性问题不应触发 travel");

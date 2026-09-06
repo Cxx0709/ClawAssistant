@@ -28,6 +28,8 @@ public class TravelTriggerPolicy implements SkillTriggerPolicy {
     private static final Pattern TRAVEL_CONTINUATION = Pattern.compile(
             "重新规划|再做(?:一个|一份)?(?:行程|方案)?|换(?:个|一个)?(?:地方|目的地)"
                     + "|(?:选|选择|确定|确认)(?:了)?(?:方案)?[A-Za-zＡ-Ｚａ-ｚ一二三四五六七八九十两0-9]+"
+                    + "|(?:方案|计划)\\s*[A-Za-zＡ-Ｚａ-ｚ一二三四五六七八九十两0-9]+"
+                    + "|(?:第)?[一二三四五六七八九十两0-9]+个"
                     + "|(?:修改|调整|改成|改为|优化|细化).{0,12}"
                     + "(?:行程|预算|人数|出发|目的地|日期|天数|住宿|酒店|交通|景点|" + NUMBER + "天)");
 

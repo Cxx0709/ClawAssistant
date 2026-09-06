@@ -629,7 +629,9 @@ public class TravelPlanService {
         copyAlias(args, "travel_date", "start_date", "travelDate", "startDate");
         copyAlias(args, "budget_total", "budget", "total_budget", "budgetTotal");
         copyAlias(args, "budget_per_person", "per_person_budget", "budgetPerPerson");
-        copyAlias(args, "selected_option_id", "selectedOptionId");
+        // Models occasionally reuse the revise/combine field name when selecting.
+        // Treat it as the same selection identifier instead of silently selecting "".
+        copyAlias(args, "selected_option_id", "selectedOptionId", "option_id", "optionId", "plan_id", "planId");
 
         JsonNode options = args.get("options");
         if (options != null && options.isArray()) {

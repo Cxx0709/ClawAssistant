@@ -36,12 +36,19 @@ export default function WorkspaceCanvas({
   );
   const files = useMemo(() => artifacts.filter((artifact) => artifact.kind === 'FILE'), [artifacts]);
   const selectedFile = files.find((artifact) => artifact.id === selectedFileId) ?? files[0];
+  const focusedArtifact = artifacts.find((artifact) => artifact.id === focusedArtifactId);
 
   useEffect(() => {
-    if (!focusedArtifactId) return;
-    setActiveTab('files');
-    setSelectedFileId(focusedArtifactId);
-  }, [focusedArtifactId]);
+    if (!focusedArtifact) return;
+    if (focusedArtifact.kind === 'IMAGE') {
+      setActiveTab('images');
+      return;
+    }
+    if (focusedArtifact.kind === 'FILE') {
+      setActiveTab('files');
+      setSelectedFileId(focusedArtifact.id);
+    }
+  }, [focusedArtifact]);
 
   useEffect(() => {
     if (fileGeneration.active) setActiveTab('files');

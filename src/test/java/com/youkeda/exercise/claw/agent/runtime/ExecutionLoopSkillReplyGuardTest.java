@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -128,6 +130,46 @@ class ExecutionLoopSkillReplyGuardTest {
         assertEquals(ExecutionLoop.LoopStatus.TEXT_REPLY, result.status());
         assertEquals("这是放行的回复", result.reply());
         verify(llm, times(2)).chatWithTools(any(), any(), any());
+    }
+
+    @Test
+    void streamingTextFromRejectedRoundIsNotForwarded() {
+        LLMClient llm = mock(LLMClient.class);
+        AtomicInteger calls = new AtomicInteger();
+        when(llm.chatWithToolsStreaming(any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    java.util.function.Consumer<String> sink = invocation.getArgument(3);
+                    LLMResponse response = calls.getAndIncrement() == 0
+                            ? new LLMResponse("这是被拦的回复", List.of(), "stop")
+                            : new LLMResponse("这是放行的回复", List.of(), "stop");
+                    sink.accept(response.getContent());
+                    return response;
+                });
+
+        SkillReplyGuardRegistry registry = new SkillReplyGuardRegistry(List.of(
+                new SkillReplyGuard() {
+                    @Override public String getSkillName() { return "travel"; }
+                    @Override public GuardResult validate(GuardContext ctx) {
+                        return ctx.reply().contains("被拦")
+                                ? GuardResult.reject("先调 travel_collect")
+                                : GuardResult.allow();
+                    }
+                }));
+        ExecutionLoop loop = new ExecutionLoop(
+                llm, mock(ToolExecutor.class), mock(PlanStore.class), mock(PlanValidator.class),
+                new ObjectMapper(), List.of(), registry);
+        List<Message> messages = new ArrayList<>();
+        messages.add(new Message("user", "我要去三亚"));
+        AtomicReference<String> emitted = new AtomicReference<>("");
+
+        ExecutionLoop.Result result = loop.run(
+                "sys", messages, List.of(), null, mock(ToolExecutionContext.class),
+                SkillSession.create("u"), "req", "travel", "我要去三亚",
+                emitted::set);
+
+        assertEquals("这是放行的回复", result.reply());
+        assertEquals("这是放行的回复", emitted.get());
     }
 
     @Test
