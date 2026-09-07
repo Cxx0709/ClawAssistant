@@ -1,4 +1,5 @@
 import { fmtDuration, toolActionLabel } from '../lib/format';
+import { isDisplaySuccess } from '../lib/execution';
 import type { ToolItem } from '../lib/types';
 
 interface ToolTraceProps {
@@ -78,13 +79,15 @@ function ChevronIcon({ open }: { open: boolean }) {
 /** 单行工具条目：出现 → 运行中 → ✓/✗ + 耗时。 */
 function ToolRow({ tool, running }: { tool: ToolItem; running: boolean }) {
   const name = tool.name === 'image_recognition' ? '图片识别' : toolActionLabel(tool.name);
+  // 课表预览在工具未加载时可能留下 err；预览结果仍应按已完成展示。
+  const effectiveState = isDisplaySuccess(tool) ? 'ok' : tool.state;
   return (
     <div className="trace-row trace-row-enter">
-      {tool.state === 'running' && running ? (
+      {effectiveState === 'running' && running ? (
         <span className="trace-icon text-brand"><SpinnerIcon /></span>
-      ) : tool.state === 'ok' ? (
+      ) : effectiveState === 'ok' ? (
         <CheckIcon />
-      ) : tool.state === 'WAIT_CONFIRM' ? (
+      ) : effectiveState === 'WAIT_CONFIRM' ? (
         <WaitConfirmIcon />
       ) : (
         <CrossIcon />
@@ -97,12 +100,12 @@ function ToolRow({ tool, running }: { tool: ToolItem; running: boolean }) {
         {tool.state === 'WAIT_CONFIRM' && (
           <span className="mt-0.5 block text-xs leading-snug text-[#b47a1f]">等待人工确认</span>
         )}
-        {tool.state === 'err' && (
+        {effectiveState === 'err' && (
           <span className="mt-0.5 block break-words text-xs leading-snug text-red-700">{tool.detail || '工具未返回具体原因，请稍后重试。'}</span>
         )}
       </span>
       <span className="ml-auto pl-3 font-mono text-[11px] tabular-nums text-ink-faint">
-        {tool.state === 'running' ? (running ? '运行中…' : '未完成') : tool.state === 'WAIT_CONFIRM' ? '待确认' : fmtDuration(tool.durationMs)}
+        {effectiveState === 'running' ? (running ? '运行中…' : '未完成') : effectiveState === 'WAIT_CONFIRM' ? '待确认' : fmtDuration(tool.durationMs)}
       </span>
     </div>
   );
@@ -118,8 +121,8 @@ export default function ToolTrace({ tools, running, open, totalMs, onToggle }: T
   const skills = [...new Set(tools.map((tool) => tool.skill).filter((skill) => skill && skill !== 'common'))];
 
   const expanded = open || running;
-  // 只统计真正的失败（ERR），WAIT_CONFIRM 不计入失败
-  const errCount = tools.filter((t) => t.state === 'err').length;
+  // 只统计真正的失败（ERR），WAIT_CONFIRM 不计入失败；image_recognition 由 VisionService 预处理，不算失败
+  const errCount = tools.filter((t) => t.state === 'err' && !isDisplaySuccess(t) && t.name !== 'image_recognition').length;
 
   // 收起态：摘要一行
   if (!expanded) {
