@@ -16,6 +16,8 @@ export default function MemoryNotice({ conversationId, refreshToken }: { convers
     if (!conversationId) return;
     let alive = true;
     let loading = false;
+    let foundNewChange = false;
+    const previousLatestId = changes[0]?.id;
     const controller = new AbortController();
     const load = async () => {
       if (loading || document.hidden || busy) return;
@@ -23,6 +25,7 @@ export default function MemoryNotice({ conversationId, refreshToken }: { convers
       try {
         const items = await getMemoryChanges(conversationId, controller.signal);
         if (alive) {
+          foundNewChange = items[0]?.id !== undefined && items[0].id !== previousLatestId;
           setChanges(prev => {
             // 有新的记忆变更时，重置 dismissed 状态，让提示重新显示
             if (items.length > 0 && prev.length > 0 && items[0].id !== prev[0].id) {
@@ -37,8 +40,16 @@ export default function MemoryNotice({ conversationId, refreshToken }: { convers
       finally { loading = false; }
     };
     void load();
+    // 记忆在回复结束后异步写入；短时间快速补查，避免错过后再等 10 秒。
+    const fastTimers = [500, 1500, 3000, 5000].map(delay =>
+      window.setTimeout(() => { if (!foundNewChange) void load(); }, delay));
     const timer = window.setInterval(() => void load(), 10000);
-    return () => { alive = false; controller.abort(); window.clearInterval(timer); };
+    return () => {
+      alive = false;
+      controller.abort();
+      fastTimers.forEach(window.clearTimeout);
+      window.clearInterval(timer);
+    };
   }, [conversationId, refreshToken, revision, busy]);
 
   const latest = changes[0];

@@ -92,7 +92,7 @@ public class ToolExecutor {
      * @param activeSkillName   当前技能名
      * @param userMessage       用户原始消息
      * @param executedCalls     已执行调用的签名集合（可变，会新增）
-     * @param failedTools       本轮已经失败的工具集合（可变，会新增）
+     * @param failedTools       兼容旧调用方保留的失败工具集合（不再按工具名熔断）
      * @return 执行结果
      */
     /** 向后兼容：不启用工具级失败熔断的直接调用方。 */
@@ -187,14 +187,6 @@ public class ToolExecutor {
                 activityRecorder.toolBlocked(
                         activityRequestId, toolSkillName, toolName, "工具调用数量已达上限");
             }
-            // 工具级失败熔断：参数变化也不能绕过同一轮的失败工具。
-            else if (failedTools.contains(toolName)) {
-                result = policyBlocked("工具 " + toolName
-                        + " 本轮已执行失败，请改用其他工具或将信息标记为待确认，不要重复调用。");
-                resultStatus = ResultStatus.BLOCKED;
-                activityRecorder.toolBlocked(
-                        activityRequestId, toolSkillName, toolName, "本轮工具失败熔断");
-            }
             // 去重（相同工具 + 相同参数）
             else if (!executedCalls.add(callSignature)) {
                 result = policyBlocked("相同工具和参数已经执行过，请使用已有结果，不要重复调用。");
@@ -224,9 +216,6 @@ public class ToolExecutor {
                         // 防御：解析器返回 null 时按失败处理
                         resultStatus = ResultStatus.FAILED;
                     }
-                    if (resultStatus == ResultStatus.FAILED) {
-                        failedTools.add(toolName);
-                    }
                     // P0-4 fail-closed：UNKNOWN（解析失败）≠ SUCCESS/PARTIAL，活动统计记为失败
                     boolean succeeded = resultStatus == ResultStatus.SUCCESS
                             || resultStatus == ResultStatus.PARTIAL;
@@ -241,7 +230,6 @@ public class ToolExecutor {
                             toolName, tc.arguments(), e.getMessage(), e);
                     result = toErrorResult(toolName, e);
                     resultStatus = ResultStatus.FAILED;
-                    failedTools.add(toolName);
                     toolStatuses.put(toolName, resultStatus);
                     activityRecorder.toolFinished(
                             activityRequestId, toolSkillName, toolName, false,

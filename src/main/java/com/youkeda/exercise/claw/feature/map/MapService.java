@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -24,6 +26,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class MapService {
+
+    private static final Pattern REGION_PATTERN = Pattern.compile("^(.{2,8}?)(?:市|区|县)");
 
     private static final Logger log = LoggerFactory.getLogger(MapService.class);
 
@@ -82,11 +86,10 @@ public class MapService {
         log.info("路线规划 | origin={} | destination={} | mode={}",
                 request.origin(), request.destination(), request.normalizedMode());
 
-        // Step 1: 地理编码起点
-        GeoPoint fromPoint = mapClient.geocode(request.origin());
-
-        // Step 2: 地理编码终点
-        GeoPoint toPoint = mapClient.geocode(request.destination());
+        // Step 1-2: 先走地址地理编码；景点/POI 名称失败时回退到地点搜索。
+        String region = inferRegion(request.origin(), request.destination());
+        GeoPoint fromPoint = resolvePoint(request.origin(), region);
+        GeoPoint toPoint = resolvePoint(request.destination(), region);
 
         // Step 3: 调用路线规划 API
         DirectionResult direction = mapClient.direction(
@@ -106,6 +109,31 @@ public class MapService {
         log.info("路线规划完成 | {}→{} | 距离={}m | 耗时={}s",
                 request.origin(), request.destination(), direction.distance(), direction.duration());
         return response.toText();
+    }
+
+    private GeoPoint resolvePoint(String name, String region) {
+        try {
+            return mapClient.geocode(name);
+        } catch (TencentMapException geocodeFailure) {
+            List<PoiResult> candidates = mapClient.searchPoi(name, region);
+            if (candidates.isEmpty()) throw geocodeFailure;
+            PoiResult poi = candidates.get(0);
+            log.info("地理编码失败，改用 POI 坐标 | name={} | region={} | title={}",
+                    name, region, poi.title());
+            return new GeoPoint(poi.lat(), poi.lng());
+        }
+    }
+
+    private String inferRegion(String origin, String destination) {
+        int common = 0;
+        int max = Math.min(origin.length(), destination.length());
+        while (common < max && origin.charAt(common) == destination.charAt(common)) common++;
+        if (common >= 2) return origin.substring(0, Math.min(common, 4));
+        for (String value : List.of(origin, destination)) {
+            Matcher matcher = REGION_PATTERN.matcher(value == null ? "" : value);
+            if (matcher.find()) return matcher.group(1);
+        }
+        return "";
     }
 
     /**

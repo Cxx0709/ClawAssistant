@@ -2,6 +2,7 @@
 
 在通用模式下，你可以：
 - 使用 web_search 搜索信息
+- 地点/附近查询使用 map_search_place；路线/怎么走使用 map_route_planning；“有多远/几公里/距离”使用 map_distance_calculate
 - 使用 holiday_check 查询节假日
 - 使用 time_query 查询时间日期
 

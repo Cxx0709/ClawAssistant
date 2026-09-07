@@ -62,6 +62,10 @@ class ToolAssemblyCrossSkillTest {
                 "file_generate 是通用能力工具，travel skill 下必须可见");
         assertTrue(toolNames.contains("web_search"),
                 "web_search 是通用能力工具，travel skill 下必须可见");
+        assertTrue(toolNames.contains("map_route_planning"),
+                "路线工具是通用地图能力，travel skill 下必须可见");
+        assertTrue(toolNames.contains("map_distance_calculate"),
+                "距离工具是通用地图能力，travel skill 下必须可见");
 
         // Global tools MUST be present
         assertTrue(toolNames.contains("memory_manage"),
@@ -183,6 +187,8 @@ class ToolAssemblyCrossSkillTest {
         assertTrue(toolNames.contains("memory_manage"));
         assertTrue(toolNames.contains("web_search"));
         assertTrue(toolNames.contains("file_generate"));
+        assertTrue(toolNames.contains("map_route_planning"));
+        assertTrue(toolNames.contains("map_distance_calculate"));
         assertFalse(toolNames.contains("weather_query"),
                 "无活跃 skill 时，skill 专属工具不应暴露");
     }
@@ -202,7 +208,8 @@ class ToolAssemblyCrossSkillTest {
                 "image_generate", "text_to_speech",
                 "create_schedule_task", "list_schedule_tasks",
                 "update_schedule_task", "cancel_schedule_task",
-                "web_search", "holiday_check")));
+                "web_search", "holiday_check",
+                "map_search_place", "map_route_planning", "map_distance_calculate")));
 
         // Register all skill definitions from skills.yml (trimmed to match)
         Map<String, SkillDefinition> skills = new LinkedHashMap<>();

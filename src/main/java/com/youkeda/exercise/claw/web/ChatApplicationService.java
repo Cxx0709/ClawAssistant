@@ -113,7 +113,7 @@ public class ChatApplicationService {
         // 异步保存，不阻塞用户响应
         memoryAutoSaveExecutor.submit(() -> {
             try {
-                boolean saved = memoryService.saveManual(MemoryCategory.PREFERENCE, content);
+                boolean saved = memoryService.saveManual(userId, MemoryCategory.PREFERENCE, content);
                 log.info("自动保存记忆 | userId={} | content={} | saved={}", userId, content, saved);
             } catch (Exception e) {
                 log.warn("自动保存记忆失败 | userId={} | content={} | error={}", userId, content, e.getMessage());

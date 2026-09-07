@@ -43,6 +43,16 @@ const SUGGESTIONS = [
   '帮我创建一个「每周跑步 3 次」的目标',
 ];
 
+// 课表解析会用“冲突/尚未保存/待确认”返回预览状态；这不是工具或网络故障。
+function isCourseSchedulePreview(name: string, detail?: string) {
+  if (name !== 'course_schedule' || !detail) return false;
+  return /冲突|尚未保存|待确认|请确认/.test(detail);
+}
+
+function isCourseSchedulePreviewMessage(detail?: string) {
+  return !!detail && /已识别出以下\s*\d+\s*门课程.*(?:冲突|尚未保存|待确认)|尚未保存.*(?:确认|取消)/.test(detail);
+}
+
 export default function ChatPage({ onHome, user, onLogout, onGoRoles }: {
   onHome: () => void;
   user: AppUser;
@@ -624,9 +634,10 @@ export default function ChatPage({ onHome, user, onLogout, onGoRoles }: {
             }
             if (idx === -1) return m;
             const next = tools.slice();
+            const preview = !evt.ok && isCourseSchedulePreview(evt.name, evt.detail);
             next[idx] = {
               ...next[idx],
-              state: evt.ok ? 'ok' : 'err',
+              state: evt.ok ? 'ok' : preview ? 'WAIT_CONFIRM' : 'err',
               durationMs: evt.durationMs,
               detail: evt.detail,
             };
@@ -689,13 +700,23 @@ export default function ChatPage({ onHome, user, onLogout, onGoRoles }: {
         case 'error': {
           setFileGeneration((state) => ({ ...state, active: false }));
           const buffered = takeBufferedText();
-          patchStream((m) => ({
-            ...m,
-            content: m.content + buffered,
-            errorText: evt.message || '处理失败，请稍后再试',
-            streaming: false,
-            status: 'FAILED',
-          }));
+          if (isCourseSchedulePreviewMessage(evt.message)) {
+            patchStream((m) => ({
+              ...m,
+              content: m.content + buffered + (evt.message || ''),
+              errorText: undefined,
+              streaming: false,
+              status: 'COMPLETED',
+            }));
+          } else {
+            patchStream((m) => ({
+              ...m,
+              content: m.content + buffered,
+              errorText: evt.message || '处理失败，请稍后再试',
+              streaming: false,
+              status: 'FAILED',
+            }));
+          }
           refreshRail();
           break;
         }
@@ -1068,7 +1089,7 @@ export default function ChatPage({ onHome, user, onLogout, onGoRoles }: {
             </div>
           </>
         )}
-        <main className="flex min-w-0 flex-1 flex-col">
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {/* 线程滚动区 */}
           <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="mx-auto w-full max-w-[760px] px-4 pb-10 pt-6 sm:px-6">
@@ -1142,7 +1163,7 @@ export default function ChatPage({ onHome, user, onLogout, onGoRoles }: {
               className="fixed inset-0 z-30 bg-ink/20 backdrop-blur-[1px] lg:hidden"
               onClick={() => setRailOpen(false)}
             />
-            <div className="fixed inset-y-0 right-0 z-40 w-[85vw] max-w-[340px] shadow-[-8px_0_30px_-18px_rgba(20,21,23,.25)] lg:static lg:z-auto lg:w-auto lg:max-w-none lg:shrink-0 lg:shadow-none">
+            <div className="fixed inset-y-0 right-0 z-40 w-[85vw] max-w-[340px] shadow-[-8px_0_30px_-18px_rgba(20,21,23,.25)] lg:static lg:z-auto lg:w-[340px] lg:max-w-none lg:shrink-0 lg:shadow-none">
               <RightRail refreshToken={railToken} />
             </div>
           </>

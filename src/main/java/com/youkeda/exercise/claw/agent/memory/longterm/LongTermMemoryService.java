@@ -133,6 +133,8 @@ public class LongTermMemoryService {
 
         // 消息太短，跳过提取
         if (userMessage == null || userMessage.length() < props.getMinExtractLength()) {
+            log.debug("用户消息过短，跳过自动长期记忆提取 | length={} | threshold={}",
+                    userMessage == null ? 0 : userMessage.length(), props.getMinExtractLength());
             return;
         }
 

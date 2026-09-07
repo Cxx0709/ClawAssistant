@@ -151,7 +151,7 @@ public class TencentMapTool extends AbstractTool {
             public String getDescription() {
                 return "规划两个地点之间的路线。返回驾车距离、预计耗时和路线概览。" +
                         "适合用户问「怎么走」「怎么去」「路线」时使用。" +
-                        "注意：参数地点名称会自动解析为坐标，无需事先调用地图编码。";
+                        "支持景点、商圈等 POI 名称；参数地点会自动解析为坐标，无需事先调用地图编码。";
             }
 
             @Override

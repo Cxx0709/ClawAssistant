@@ -70,6 +70,10 @@ class SkillsPropertiesYamlBindingTest {
                 "text_to_speech 必须是通用能力工具");
         assertTrue(commonCapTools.contains("map_search_place"),
                 "map_search_place 必须是通用能力工具，否则普通地点推荐无法调用地图");
+        assertTrue(commonCapTools.contains("map_route_planning"),
+                "map_route_planning 必须是通用能力工具，否则未进入出行技能的路线问题会退化为网络搜索");
+        assertTrue(commonCapTools.contains("map_distance_calculate"),
+                "map_distance_calculate 必须是通用能力工具，否则未进入出行技能的距离问题会退化为网络搜索");
     }
 
     @Test

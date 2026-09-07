@@ -21,8 +21,10 @@
     - web_search
     - holiday_check
     - goal_manage
-    # 地点推荐/景点查询是通用地图能力，不要求先进入 travel 技能
+    # 地点、路线、距离都是通用地图能力，不要求先进入 travel/transport 技能
     - map_search_place
+    - map_route_planning
+    - map_distance_calculate
 
   skills:
     common:
